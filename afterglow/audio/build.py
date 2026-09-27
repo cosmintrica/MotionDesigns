@@ -91,7 +91,7 @@ def main():
     sfx_bus, events = mix.build_sfx_bus(log=log)
     amb_bus = mix.build_ambience(log=log)
     log("[6/6] mastering")
-    master, trim = mix.master(music, sfx_bus, amb_bus, log=log)
+    master, trim, music, corr = mix.master(music, sfx_bus, amb_bus, log=log)
     assert master.shape == (N_SAMPLES, 2)
 
     rng = np.random.default_rng(1234)
@@ -106,7 +106,7 @@ def main():
     write24(os.path.join(OUT, "stems", "sfx_bus.wav"), buses["sfx"], rng)
     write24(os.path.join(OUT, "stems", "ambience_bus.wav"), buses["amb"], rng)
     # music sub-groups (before memory colour / bus effects; arc gain + trim applied)
-    gc = mix.gain_curve(gains)[:, None] * g
+    gc = (mix.gain_curve(gains) * mix.gain_curve(corr))[:, None] * g
     for gname, x in minfo["groups"].items():
         write24(os.path.join(OUT, "stems", f"{gname}_dry.wav"), x * gc, rng)
     write24(os.path.join(OUT, "stems", "music_reverb_returns.wav"), minfo["reverb"] * gc, rng)
@@ -129,11 +129,11 @@ def main():
     ]
     rows = analysis.write_report(os.path.join(OUT, "report.txt"), y, buses,
                                  dict(path=out_mix, sr=sr, channels=info.channels, notes=notes),
-                                 targets=mix.ARC, events=events)
+                                 targets=mix.ARC_FINAL, events=events)
     log("  report written")
     stem_table(os.path.join(OUT, "checks", "stem_levels.txt"), minfo["stem_blocks"], gc[:, 0], SECTIONS)
     analysis.spectrogram_png(os.path.join(OUT, "spectrogram.png"), y)
-    analysis.envelope_png(os.path.join(OUT, "envelope.png"), y, buses, targets=mix.ARC)
+    analysis.envelope_png(os.path.join(OUT, "envelope.png"), y, buses, targets=mix.ARC_FINAL)
     for (a, b, name) in [(0, 10.5, "cold_open"), (40.5, 48.5, "tv_freeze"), (58, 68.5, "dialup_drop"),
                          (82, 92, "earbud"), (99.5, 105, "beat_cut"), (106.5, 115, "reality_bloom"),
                          (153, 163, "tape_stop"), (163, 172, "riser_rec"), (172, 182, "ending")]:

@@ -29,6 +29,8 @@ ARC = {
     "first": -16.4, "who": -14.8, "people": -12.4, "imagined": -19.0, "today": -17.0,
     "rec": -12.4,
 }
+# final targets used by the master's arc correction (effect sections sit lower on purpose)
+ARC_FINAL = dict(ARC, earbud=-16.4, dialup=-19.0)
 EXPECTED_TRIM = 2.2
 MUSIC_TARGET = {k: v - EXPECTED_TRIM for k, v in ARC.items()}
 # ramp (s) used when moving between neighbouring section gains; the ramp ends at the
@@ -45,7 +47,7 @@ STEM_REF = -20.0               # every stem is normalised to this active loudnes
 STEMS = {
     #  name          level  plate  hall   room
     "piano":        (0.0,  -13.0, -7.0,  None),
-    "piano_bright": (-12.0, -14.0, -11.0, None),
+    "piano_bright": (-11.0, -12.0, -12.0, None),
     "musicbox":     (-13.0, -8.0,  -1.0,  None),
     "celesta":      (-7.5,  -9.0,  -2.0,  None),
     "bells":        (-10.0, -10.0, -3.0,  None),
@@ -70,6 +72,9 @@ AUTO = {
     "piano": [(0, 0), (66, 0), (66.2, -1.5), (101.9, -1.5), (102.1, 0.5), (137, 0.5), (138, 1.5),
               (146, 1.0), (147, 0), (168, 1.0)],
     "pad": [(0, 0), (60, 0), (60.5, 2.0), (65.5, 2.0), (66, 0)],
+    "piano_bright": [(0, -4.0), (20.5, -4.0), (21.5, 0.0), (89.5, 0.0), (90.5, 3.0), (101.9, 3.0),
+                     (102.1, -4.0), (107.9, -4.0), (108.1, -8.0), (110.8, -8.0), (111.8, 0.0), (146.5, 0.0),
+                     (147.5, -3.0), (156, -3.0), (161.5, 0.0), (167.5, 1.0), (168.3, 3.0)],
     "strings": [(0, 0), (137.5, 0), (138.3, 3.0), (145.5, 3.0), (147.0, 0)],
     "cello": [(0, 0), (137.5, 0), (138.3, 2.0), (145.5, 2.0), (147.0, 0)],
     "choir": [(0, 2.0)],
@@ -87,7 +92,8 @@ WOW = [(0, 4.0), (60, 4.0), (66, 3.0), (89.5, 3.0), (90.5, 1.2), (101.9, 1.2), (
        (120, 3.5), (147, 4.5), (156, 4.5), (162, 3.0), (168, 2.2)]
 FLUTTER = [(0, 0.9), (66, 0.7), (90, 0.3), (102, 0.6), (162, 0.6), (168, 0.5)]
 ROLLOFF = [(0, 12000), (21, 12500), (60, 12500), (66, 13000), (89.5, 13000), (90.5, 22000), (101.9, 22000),
-           (102.1, 14000), (126, 14000), (147, 12000), (156, 12000), (162, 14000), (168, 22000)]
+           (102.1, 15000), (120, 15000), (126, 18000), (147, 18000), (148, 13000), (156, 13000), (162, 16000),
+           (168, 22000)]
 
 SFX_REVERB_SEND = -14.0   # dB into the room reverb for the SFX bus
 AMB = {  # ambience levels (dBFS RMS)
@@ -157,12 +163,11 @@ def stem_eq():
     return {
         "piano": dsp.eq(dsp.butter("high", 34, 2), dsp.rbj("peak", 330, 0.9, -2.5), dsp.rbj("peak", 2800, 0.8, 3.0),
                         dsp.rbj("highshelf", 5500, 0.7, 3.0)),
-        "piano_bright": dsp.eq(dsp.butter("high", 120, 2), dsp.rbj("highshelf", 5000, 0.7, 1.0)),
+        "piano_bright": dsp.eq(dsp.butter("high", 1900, 4), dsp.rbj("highshelf", 9000, 0.7, -2.0)),
         "musicbox": dsp.eq(dsp.butter("high", 350, 2), dsp.butter("low", 9000, 2)),
         "celesta": dsp.eq(dsp.butter("high", 250, 2), dsp.butter("low", 10000, 2)),
         "bells": dsp.eq(dsp.butter("high", 220, 2), dsp.rbj("highshelf", 6000, 0.7, -2.0)),
-        "strings": dsp.eq(dsp.butter("high", 38, 2), dsp.rbj("peak", 2800, 0.9, -1.0), dsp.rbj("peak", 350, 0.9, -1.5),
-                          dsp.butter("low", 13000, 2)),
+        "strings": dsp.eq(dsp.butter("high", 38, 2), dsp.rbj("peak", 350, 0.9, -1.5), dsp.rbj("highshelf", 6000, 0.7, 2.0)),
         "cello": dsp.eq(dsp.butter("high", 55, 2), dsp.rbj("peak", 240, 0.9, 1.5), dsp.rbj("peak", 3000, 1.0, -2.0)),
         "choir": dsp.eq(dsp.butter("high", 160, 2), dsp.butter("low", 8500, 2), dsp.rbj("peak", 3000, 1.0, -2.0)),
         "ep": dsp.eq(dsp.butter("high", 90, 2), dsp.butter("low", 6500, 2), dsp.rbj("peak", 320, 1.0, -1.5)),
@@ -194,7 +199,8 @@ def prepare_stems(R, Y, S, log=log_default):
             x = x / (np.max(np.abs(x)) + 1e-12) + 0.20 * sub_kick_layer(S["dr_kick"])
         x = dsp.filt(x, EQ[name]) if name in EQ else x
         if name == "ep":
-            x = dsp.tape_sat(x / (np.max(np.abs(x)) + 1e-12) * 0.5, 4.0) * 2.0
+            x = dsp.tape_sat(x / (np.max(np.abs(x)) + 1e-12) * 0.6, 9.0)
+            x = dsp.filt(x, dsp.rbj("peak", 1800, 0.9, 2.5))
             x = sidechain_duck(x, kick_key, depth_db=2.5)
         if name == "sub":
             x = sidechain_duck(x, kick_key, depth_db=3.0, release=0.12)
@@ -494,22 +500,30 @@ def build_sfx_bus(log=log_default):
 
 # ------------------------------------------------------------------ master
 
-def master(music, sfx_bus, amb_bus, log=log_default):
+def section_st_means(y):
+    t, st = dsp.short_term_lufs(y, 0.1)
+    out = {}
+    for key, label, a, b in SECTIONS:
+        sel = (t >= a + 1.5) & (t <= b - 1.5) if b - a >= 3.5 else (t >= a) & (t <= b)
+        p = 10 ** (st[sel] / 10)
+        out[key] = 10 * np.log10(p.mean()) if len(p) else -99.0
+    return out
+
+
+def master_once(music, sfx_bus, amb_bus, log=log_default, verbose=True):
     mix = music + sfx_bus + amb_bus
     mix -= np.mean(mix, axis=0, keepdims=True)                      # no DC
     mix = dsp.filt(mix, dsp.butter("high", 22, 2))
-    # gentle glue compression
-    mix = dsp.compressor(mix, thr_db=-20.0, ratio=1.6, attack=0.03, release=0.35, knee_db=8.0)
-    # loudness trim to target (measured before limiting, then re-checked)
     li = dsp.integrated_lufs(mix)
     trim = MASTER_TARGET_LUFS - li
     mix *= dsp.db2lin(trim)
-    log(f"  master: pre-limit integrated {li:.2f} LUFS, trim {trim:+.2f} dB")
+    # gentle glue compression (slow RMS, low ratio) - touches only the loudest passages
+    mix = dsp.compressor(mix, thr_db=-17.0, ratio=1.5, attack=0.03, release=0.3, knee_db=8.0, rms_win=0.05)
     # true-peak limiter; re-trim until the integrated loudness sits on target
     for it in range(4):
         y, g = dsp.limiter(mix, ceiling_db=TRUE_PEAK_CEILING, lookahead=0.003, release=0.15)
         li2 = dsp.integrated_lufs(y)
-        if abs(li2 - MASTER_TARGET_LUFS) < 0.08:
+        if abs(li2 - MASTER_TARGET_LUFS) < 0.05:
             break
         mix *= dsp.db2lin(MASTER_TARGET_LUFS - li2)
         trim += MASTER_TARGET_LUFS - li2
@@ -519,6 +533,28 @@ def master(music, sfx_bus, amb_bus, log=log_default):
     tp = dsp.true_peak_db(y)
     if tp > TRUE_PEAK_CEILING + 0.05:
         y *= dsp.db2lin(TRUE_PEAK_CEILING - tp)
-    log(f"  master: integrated {dsp.integrated_lufs(y):.2f} LUFS, true peak {dsp.true_peak_db(y):.2f} dBTP, "
-        f"max GR {-dsp.lin2db(np.min(g)):.2f} dB")
+    if verbose:
+        log(f"  master: integrated {dsp.integrated_lufs(y):.2f} LUFS, true peak {dsp.true_peak_db(y):.2f} dBTP, "
+            f"trim {trim:+.2f} dB, max limiter GR {-dsp.lin2db(np.min(g)):.2f} dB")
     return y, trim
+
+
+def master(music, sfx_bus, amb_bus, log=log_default, passes=3):
+    """Master with arc correction: measure each section after limiting and nudge the
+    music bus toward ARC_FINAL (the glue/limiter/trim otherwise flatten the arc)."""
+    corr_total = {k: 0.0 for k in ARC_FINAL}
+    for p in range(passes):
+        y, trim = master_once(music, sfx_bus, amb_bus, log, verbose=(p == passes - 1))
+        if p == passes - 1:
+            break
+        meas = section_st_means(y)
+        corr = {k: float(np.clip(ARC_FINAL[k] - meas[k], -4.0, 4.0)) for k in ARC_FINAL}
+        err = max(abs(v) for v in corr.values())
+        log(f"  arc correction pass {p + 1}: max error {err:.2f} dB")
+        if err < 0.25:
+            break
+        for k in corr:
+            corr_total[k] += corr[k]
+        music = music * gain_curve(corr)[:, None]
+    log("  arc correction (dB): " + ", ".join(f"{k} {v:+.1f}" for k, v in corr_total.items()))
+    return y, trim, music, corr_total

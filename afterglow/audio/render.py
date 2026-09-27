@@ -15,8 +15,8 @@ FLUID_FLAGS = ["-ni", "-q", "-g", "1.0", "-r", str(SR), "-R", "0", "-C", "0", "-
                "-o", "synth.polyphony=512"]
 
 
-def _render_one(midi_path, wav_path):
-    cmd = ["fluidsynth"] + FLUID_FLAGS + ["-F", wav_path, SOUNDFONT, midi_path]
+def _render_one(midi_path, wav_path, soundfont=SOUNDFONT):
+    cmd = ["fluidsynth"] + FLUID_FLAGS + ["-F", wav_path, soundfont, midi_path]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -30,20 +30,21 @@ def render_parts(parts, midi_dir, wav_dir, jobs=4, log=print):
             continue
         mid = os.path.join(midi_dir, f"{name}.mid")
         write_midi(part, mid)
+        sfont = part.soundfont or SOUNDFONT
         h = hashlib.sha1(open(mid, "rb").read() + " ".join(FLUID_FLAGS).encode() +
-                         SOUNDFONT.encode()).hexdigest()[:16]
+                         sfont.encode()).hexdigest()[:16]
         wav = os.path.join(wav_dir, f"{name}.wav")
         stamp = wav + ".hash"
         paths[name] = wav
         if os.path.exists(wav) and os.path.exists(stamp) and open(stamp).read() == h:
             continue
-        todo.append((mid, wav, stamp, h))
+        todo.append((mid, wav, stamp, h, sfont))
     if todo:
         log(f"  fluidsynth: rendering {len(todo)} part(s): " + ", ".join(os.path.basename(t[1]) for t in todo))
 
         def job(item):
-            mid, wav, stamp, h = item
-            _render_one(mid, wav)
+            mid, wav, stamp, h, sfont = item
+            _render_one(mid, wav, sfont)
             with open(stamp, "w") as f:
                 f.write(h)
 

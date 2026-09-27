@@ -15,6 +15,7 @@ import mido
 from cues import bar_t, BEAT, LEAD_IN_BEATS, DURATION, CUES
 
 TPB = 960
+FLUIDR3 = "/usr/share/sounds/sf2/FluidR3_GM.sf2"
 _NAMES = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
 
@@ -140,7 +141,9 @@ def bass_of(symbol, lo=33, hi=44):
 class Part:
     """A performance part.  kind='sf' (fluidsynth) or 'synth' (numpy)."""
 
-    def __init__(self, name, kind="sf", programs=None, pans=None, humanize=0.005, seed=0):
+    def __init__(self, name, kind="sf", programs=None, pans=None, humanize=0.005, seed=0, vel_map=()):
+        self.vel_map = list(vel_map)                     # [(t0, t1, velocity offset)]
+        self.soundfont = None                            # None = MuseScore General
         self.name, self.kind = name, kind
         self.programs = programs or {0: (0, 0)}         # ch -> (bank, program)
         self.pans = pans or {}
@@ -149,15 +152,22 @@ class Part:
         self.notes = []                                  # dicts
         self.ccs = []                                    # (t, ch, cc, val)
 
-    def n(self, t, dur, pitch, vel, ch=0, hum=True, **kw):
+    @property
+    def default_ch(self):
+        return next(iter(self.programs))           # e.g. 9 for drum kits
+
+    def n(self, t, dur, pitch, vel, ch=None, hum=True, **kw):
+        ch = self.default_ch if ch is None else ch
         self.notes.append(dict(t=float(t), dur=float(dur), p=P(pitch), v=float(vel), ch=ch,
                                hum=hum, **kw))
 
-    def cc(self, t, num, val, ch=0):
+    def cc(self, t, num, val, ch=None):
+        ch = self.default_ch if ch is None else ch
         self.ccs.append((float(t), ch, int(num), int(np.clip(round(val), 0, 127))))
 
-    def cc_curve(self, num, points, ch=0, step=0.05):
+    def cc_curve(self, num, points, ch=None, step=0.05):
         """Smooth CC automation from (t, value) breakpoints."""
+        ch = self.default_ch if ch is None else ch
         pts = sorted(points)
         chans = ch if isinstance(ch, (list, tuple)) else [ch]
         last = {}
@@ -191,6 +201,9 @@ class Part:
                 dt = float(np.clip(rng.normal(0, self.humanize), -0.012, 0.012))
                 d["t"] += dt
                 d["v"] += rng.normal(0, 2.5)
+            for (a, b, dv) in self.vel_map:
+                if a <= nt["t"] < b:
+                    d["v"] += dv
             d["v"] = float(np.clip(d["v"], 1, 127))
             d["t"] = max(0.0, d["t"])
             out.append(d)
@@ -252,7 +265,7 @@ def write_midi(part, path, end_time=DURATION + 0.5):
 
 # ---------------------------------------------------------------- writing helpers
 
-def mel(part, m, items, vel=50, legato=0.04, octave=0, ov=-10, ch=0, **kw):
+def mel(part, m, items, vel=50, legato=0.04, octave=0, ov=-10, ch=None, **kw):
     """Melody: items = (beat, dur_beats, pitch[, vel])."""
     for it in items:
         beat, dur, p = it[:3]
@@ -262,13 +275,13 @@ def mel(part, m, items, vel=50, legato=0.04, octave=0, ov=-10, ch=0, **kw):
             part.n(T(m, beat) + 0.006, B(dur) + legato, P(p) + 12 * octave, v + ov, ch=ch, **kw)
 
 
-def rolled(part, t, pitches, dur, vel, roll=0.03, vstep=1.5, ch=0, **kw):
+def rolled(part, t, pitches, dur, vel, roll=0.03, vstep=1.5, ch=None, **kw):
     for i, p in enumerate(pitches):
         part.n(t + i * roll, dur - i * roll, p, vel + i * vstep, ch=ch, **kw)
 
 
 def arp(part, t0, voicing, n, step, pattern=(0, 1, 2, 3, 4, 3, 2, 1), vb=44, vlo=31, vhi=40,
-        ring=2.2, accent_first=True, ch=0, end=None, **kw):
+        ring=2.2, accent_first=True, ch=None, end=None, **kw):
     top = max(pattern)
     if end is None:
         end = t0 + n * step
@@ -322,8 +335,10 @@ EPV = {
 
 def compose():
     S = {}
-    pno = Part("piano", programs={0: (8, 0)}, humanize=0.0045)        # Mellow Grand (felt-like)
-    pbr = Part("piano_bright", programs={0: (0, 0)}, humanize=0.004)  # Grand, brightness layer
+    # Mellow Grand (felt-like). The intro, the question and the tape end stay at the
+    # softest touch; elsewhere the touch is a little firmer for presence.
+    pno = Part("piano", programs={0: (8, 0)}, humanize=0.0045,
+               vel_map=[(20.9, 101.9, 7), (107.9, 156.2, 7), (161.5, 182.0, 9)])
     swell = Part("piano_swell", programs={0: (8, 0)}, humanize=0.0)   # source for reverse swell
     mbox = Part("musicbox", programs={0: (0, 10)}, humanize=0.004)
     cel = Part("celesta", programs={0: (0, 8)}, humanize=0.005)
@@ -611,7 +626,6 @@ def compose():
     ]
     for m, items in y10:
         mel(pno, m, items)
-        mel(pbr, m, items, vel=40)
     for (a, b, s) in chord_spans(27, 30):
         pno.cc(a + 0.05, 64, 100)
         pno.cc(min(b, T(31)) - 0.03, 64, 0)
@@ -834,7 +848,6 @@ def compose():
     ]
     for m, items in rec:
         mel(pno, m, items, octave=1, ov=-8)
-        mel(pbr, m, items, vel=46, octave=1, ov=-6)
     # final Dmaj9 at 177.0
     tf = CUES["final_chord"]
     pno.n(tf, 3.4, "D1", 50)
@@ -842,8 +855,6 @@ def compose():
     rolled(pno, tf + 0.05, ["A2", "F#3", "C#4", "E4", "A4"], 3.3, 44, roll=0.06, vstep=2)
     pno.n(tf + 0.02, 3.2, "E5", 62)
     pno.n(tf + 0.025, 3.2, "E6", 54)
-    pbr.n(tf + 0.02, 3.2, "E5", 44)
-    pbr.n(tf + 0.025, 3.2, "E6", 40)
     changes.append(tf)
     pno.pedal(changes, end=180.6)
     prev = None
@@ -888,6 +899,12 @@ def compose():
     for p in ["D5", "F#5", "A5", "C#6", "E6"]:
         shim.n(tf, 3.5, p, 0.7, hum=False)
 
+    # 'air' layer: the very same performance rendered with FluidR3's brighter grand
+    # (identical humanisation via the shared seed); the mixer keeps only its top end.
+    pbr = Part("piano_bright", programs={0: (0, 0)}, humanize=pno.humanize,
+               seed=zlib.crc32(b"piano"), vel_map=pno.vel_map)
+    pbr.notes, pbr.ccs = list(pno.notes), list(pno.ccs)
+    pbr.soundfont = FLUIDR3
     for part in (pno, pbr, swell, mbox, cel, bells, strings, cello, choir, ep,
                  kick, snare, hats, perc, brush, pad, sub, chip, pluck, shim):
         S[part.name] = part
