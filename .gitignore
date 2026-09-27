@@ -1,0 +1,11 @@
+# render intermediates
+afterglow/out/segments/
+afterglow/out/segtest/
+afterglow/out/stills/
+afterglow/out/audio/stems/
+afterglow/out/audio/midi/
+afterglow/out/*.mkv
+afterglow/out/*_master.mp4
+node_modules/
+__pycache__/
+*.pyc

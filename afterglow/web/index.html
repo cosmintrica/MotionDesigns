@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Afterglow</title>
+<link rel="stylesheet" href="fonts/fonts-local.css">
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  canvas { display: block; }
+  /* force the fonts to be requested early */
+  .preload span { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+<div class="preload">
+  <span style="font-family:'Cormorant Garamond'">a</span><span style="font-family:'VT323'">a</span>
+  <span style="font-family:'Press Start 2P'">a</span><span style="font-family:'Caveat'">a</span>
+  <span style="font-family:'IBM Plex Mono'">a</span><span style="font-family:'Inter'">a</span>
+</div>
+<canvas id="out" width="1920" height="1080"></canvas>
+<script src="js/util.js"></script>
+<script src="js/post.js"></script>
+<script src="js/text.js"></script>
+<script src="js/figures.js"></script>
+<script src="js/env.js"></script>
+<script src="js/props.js"></script>
+<script src="js/scenes.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
