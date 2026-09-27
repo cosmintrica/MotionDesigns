@@ -50,12 +50,12 @@ STEMS = {
     "cello":        (-5.0,  None,  -7.0,  None),
     "choir":        (-11.0, None,  -3.0,  None),
     "ep":           (-4.0,  -11.0, -16.0, None),
-    "dr_kick":      (-4.0,  None,  None,  -18.0),
+    "dr_kick":      (-5.0,  None,  None,  -18.0),
     "dr_snare":     (-7.0,  -16.0, None,  -12.0),
     "dr_hats":      (-14.0, None,  None,  -16.0),
     "dr_perc":      (-15.0, -18.0, None,  -14.0),
     "dr_brush":     (-15.0, -12.0, -12.0, None),
-    "sub":          (-6.5,  None,  None,  None),
+    "sub":          (-10.0, None,  None,  None),
     "pad":          (-11.0, None,  -6.0,  None),
     "shimmer":      (-17.0, None,  0.0,   None),
     "pluck":        (-10.5, -9.0,  -14.0, None),
@@ -151,7 +151,7 @@ def prepare_stems(R, Y, S, log=log_default):
     raw = dict(R)
     raw.update(Y)
     # kick: add the sub layer
-    raw["dr_kick"] = raw["dr_kick"] / (np.max(np.abs(raw["dr_kick"])) + 1e-12) + 0.55 * sub_kick_layer(S["dr_kick"])
+    raw["dr_kick"] = raw["dr_kick"] / (np.max(np.abs(raw["dr_kick"])) + 1e-12) + 0.30 * sub_kick_layer(S["dr_kick"])
     EQ = {
         "piano": dsp.eq(dsp.butter("high", 32, 2), dsp.rbj("peak", 260, 1.0, -1.5), dsp.rbj("peak", 2600, 0.9, 1.5),
                         dsp.rbj("highshelf", 7000, 0.7, -2.0)),
@@ -164,7 +164,7 @@ def prepare_stems(R, Y, S, log=log_default):
         "cello": dsp.eq(dsp.butter("high", 55, 2), dsp.rbj("peak", 240, 0.9, 1.5), dsp.rbj("peak", 3000, 1.0, -2.0)),
         "choir": dsp.eq(dsp.butter("high", 160, 2), dsp.butter("low", 8500, 2), dsp.rbj("peak", 3000, 1.0, -2.0)),
         "ep": dsp.eq(dsp.butter("high", 90, 2), dsp.butter("low", 6500, 2), dsp.rbj("peak", 320, 1.0, -1.5)),
-        "dr_kick": dsp.eq(dsp.butter("high", 30, 2), dsp.butter("low", 3500, 2)),
+        "dr_kick": dsp.eq(dsp.butter("high", 42, 2), dsp.butter("low", 4000, 2), dsp.rbj("peak", 2500, 1.0, 2.0)),
         "dr_snare": dsp.eq(dsp.butter("high", 130, 2), dsp.butter("low", 8500, 2), dsp.rbj("peak", 900, 1.0, 1.5)),
         "dr_hats": dsp.eq(dsp.butter("high", 4000, 2), dsp.butter("low", 10500, 2)),
         "dr_perc": dsp.eq(dsp.butter("high", 1500, 2), dsp.butter("low", 11000, 2)),
@@ -323,6 +323,10 @@ def build_music(R, Y, S, log=log_default):
     log("  stems: EQ / level")
     stems = prepare_stems(R, Y, S, log)
     beat_cut(stems, CUES["beat_cut"])
+    ts0, ts1 = CUES["tape_stop"]
+    sil = dsp.curve([(0, 1), (ts1 + 0.05, 1), (ts1 + 0.1, 0), (T(51) - 0.5, 0), (T(51) - 0.45, 1)], smooth=True)
+    for k in stems:
+        stems[k] = stems[k] * sil[:, None]
     log("  reverbs (plate / hall / room)")
     rets = reverb_returns(stems, log)
     dry = sum(stems.values())
@@ -355,11 +359,7 @@ def build_music(R, Y, S, log=log_default):
     full = earbud(full)
     full = reality_memory(dry_c, full, np.random.default_rng(3))
     a, b = CUES["tape_stop"]
-    full = dsp.tape_stop(full, a, b - a)
-    # keep the tape-end window silent until the music returns (m51)
-    gate = np.ones(N_SAMPLES)
-    gate[dsp.secs(b):dsp.secs(T(51) - 0.3)] = 0.0
-    full *= gate[:, None]
+    full = dsp.tape_stop(full, a, b - a, resume_at=T(51) - 0.3)
     # the music fades a little ahead of the master so the film ends on tape hiss
     fo0, fo1 = CUES["fade_out"]
     full *= dsp.db_curve([(0, 0), (fo0 - 0.4, 0), (fo1 - 0.6, -80)])[:, None]

@@ -98,18 +98,20 @@ def width(x, w):
 
 # ------------------------------------------------------------------ automation
 
-def curve(points, n=N_SAMPLES, t0=0.0, smooth=True):
+def curve(points, n=N_SAMPLES, t0=0.0, smooth=True, ctrl=32):
     """Piecewise automation curve sampled at SR.
 
     points: list of (t, value) sorted by t.  Held constant outside the range.
     smooth: cosine interpolation between breakpoints (no corners).
+    Evaluated on a control grid of `ctrl` samples and linearly interpolated.
     """
     pts = sorted(points, key=lambda p: p[0])
     ts = np.array([p[0] for p in pts], dtype=float)
     vs = np.array([p[1] for p in pts], dtype=float)
-    t = t0 + np.arange(n) / SR
     if len(pts) == 1:
         return np.full(n, vs[0])
+    m = n // ctrl + 2
+    t = t0 + np.arange(m) * ctrl / SR
     idx = np.clip(np.searchsorted(ts, t, side="right") - 1, 0, len(ts) - 2)
     ta, tb = ts[idx], ts[idx + 1]
     va, vb = vs[idx], vs[idx + 1]
@@ -120,7 +122,7 @@ def curve(points, n=N_SAMPLES, t0=0.0, smooth=True):
     out = va + (vb - va) * u
     out[t < ts[0]] = vs[0]
     out[t >= ts[-1]] = vs[-1]
-    return out
+    return np.interp(np.arange(n), np.arange(m) * ctrl, out)
 
 
 def db_curve(points, n=N_SAMPLES, t0=0.0, smooth=True):
@@ -335,21 +337,29 @@ def make_ir(rt60=2.4, predelay=0.03, length=None, rt_low=1.25, rt_high=0.45,
     return ir
 
 
+def _fftconv_pair(x, ir, full=False):
+    """True-stereo FFT convolution with one big multithreaded FFT."""
+    from scipy import fft as sfft
+    x = to_stereo(x)
+    n, m = len(x), len(ir)
+    L = sfft.next_fast_len(n + m - 1, real=True)
+    X = sfft.rfft(x, L, axis=0, workers=4)
+    H = sfft.rfft(ir, L, axis=0, workers=4)
+    YL = X[:, 0] * H[:, 0] + X[:, 1] * H[:, 2]
+    YR = X[:, 0] * H[:, 1] + X[:, 1] * H[:, 3]
+    del X, H
+    out = sfft.irfft(np.stack([YL, YR], axis=1), L, axis=0, workers=4)
+    return out[:n + m - 1] if full else out[:n]
+
+
 def convolve_reverb(x, ir):
     """True-stereo convolution. x (n,2), ir (m,4). Output length n (tail cut)."""
-    x = to_stereo(x)
-    n = len(x)
-    outL = signal.oaconvolve(x[:, 0], ir[:, 0])[:n] + signal.oaconvolve(x[:, 1], ir[:, 2])[:n]
-    outR = signal.oaconvolve(x[:, 0], ir[:, 1])[:n] + signal.oaconvolve(x[:, 1], ir[:, 3])[:n]
-    return np.stack([outL, outR], axis=1)
+    return _fftconv_pair(x, ir, full=False)
 
 
 def convolve_reverb_full(x, ir):
     """Like convolve_reverb but keeps the full tail (n + m - 1)."""
-    x = to_stereo(x)
-    outL = signal.oaconvolve(x[:, 0], ir[:, 0]) + signal.oaconvolve(x[:, 1], ir[:, 2])
-    outR = signal.oaconvolve(x[:, 0], ir[:, 1]) + signal.oaconvolve(x[:, 1], ir[:, 3])
-    return np.stack([outL, outR], axis=1)
+    return _fftconv_pair(x, ir, full=True)
 
 
 # ------------------------------------------------------------------ interpolation / time warps
@@ -401,8 +411,8 @@ def wow_flutter(x, wow_cents, flutter_cents, rng, wow_rate=0.62, flutter_rate=7.
     return read_at(x, pos)
 
 
-def tape_stop(x, t_start, dur, power=1.35):
-    """Tape stop: playback speed ramps 1 -> 0 over dur; silence afterwards."""
+def tape_stop(x, t_start, dur, power=1.35, resume_at=None):
+    """Tape stop: playback speed ramps 1 -> 0 over dur; silence until resume_at (s)."""
     y = np.array(x, copy=True)
     n0, nd = secs(t_start), secs(dur)
     u = np.arange(nd) / nd
@@ -421,7 +431,8 @@ def tape_stop(x, t_start, dur, power=1.35):
         seg = seg * (1 - mixw) + dark * mixw
         seg *= gain
     y[n0:n0 + nd] = seg[:len(y) - n0]
-    y[n0 + nd:] = 0.0
+    n_res = len(y) if resume_at is None else secs(resume_at)
+    y[n0 + nd:n_res] = 0.0
     return y
 
 
@@ -493,15 +504,31 @@ def compressor(x, thr_db=-20.0, ratio=2.0, attack=0.02, release=0.25, knee_db=6.
     return (y, g) if return_gain else y
 
 
-def true_peak_env(x, os=4):
-    """Per-sample true-peak estimate (max over channels of the 4x oversampled |x|)."""
-    y = signal.resample_poly(x, os, 1, axis=0)
-    a = np.abs(y)
+def true_peak_env(x, os=4, floor_db=-9.0, chunk=48000):
+    """Per-sample true-peak estimate (max over channels of the 4x oversampled |x|).
+
+    Chunks whose sample peak is below floor_db are returned as sample peaks (their
+    inter-sample overs cannot reach the limiter ceiling)."""
+    a = np.abs(x)
     if a.ndim == 2:
         a = a.max(axis=1)
+    out = a.copy()
+    thr = db2lin(floor_db)
     n = len(x)
-    a = a[:n * os].reshape(n, os).max(axis=1)
-    return a
+    pad = 64
+    for s in range(0, n, chunk):
+        e = min(n, s + chunk)
+        if a[s:e].max() < thr:
+            continue
+        s0, e0 = max(0, s - pad), min(n, e + pad)
+        y = signal.resample_poly(x[s0:e0], os, 1, axis=0)
+        ya = np.abs(y)
+        if ya.ndim == 2:
+            ya = ya.max(axis=1)
+        k = e0 - s0
+        ya = ya[:k * os].reshape(k, os).max(axis=1)
+        out[s:e] = np.maximum(a[s:e], ya[s - s0:s - s0 + (e - s)])
+    return out
 
 
 def true_peak_db(x, os=4):
