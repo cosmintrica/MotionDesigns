@@ -86,9 +86,10 @@ def write_report(path, mix, buses, info, targets=None, events=None):
     L.append("")
     L.append("Per-section loudness (short-term = 3 s window; mean is the power average of the")
     L.append("short-term curve inside the section; music/sfx/amb = gated loudness of each bus")
-    L.append("in the section after the master trim)")
+    L.append("in the section after the master trim; target = the dynamics arc in mix.ARC; the")
+    L.append("earbud / reality sections sit below it on purpose - the effect lowers them)")
     L.append("-" * 104)
-    L.append(f"{'section':22s} {'time (s)':>13s} {'ST mean':>8s} {'ST min':>7s} {'ST max':>7s} {'M max':>6s}"
+    L.append(f"{'section':22s} {'time (s)':>13s} {'target':>7s} {'ST mean':>8s} {'ST min':>7s} {'ST max':>7s} {'M max':>6s}"
              f" {'music':>6s} {'sfx':>6s} {'amb':>6s}")
     rows = section_table(mix, targets)
     for r in rows:
@@ -96,7 +97,8 @@ def write_report(path, mix, buses, info, targets=None, events=None):
         for k in ("music", "sfx", "amb"):
             v = dsp.integrated_lufs(buses[k][dsp.secs(r['a']):dsp.secs(r['b'])]) if k in buses else -99
             bl.append(v if v > -69 else float("nan"))
-        L.append(f"{r['label']:22s} {r['a']:6.1f}-{r['b']:6.1f} {r['st_mean']:8.1f} {r['st_min']:7.1f} {r['st_max']:7.1f}"
+        tg = f"{r['target']:7.1f}" if r['target'] is not None else f"{'-':>7s}"
+        L.append(f"{r['label']:22s} {r['a']:6.1f}-{r['b']:6.1f} {tg} {r['st_mean']:8.1f} {r['st_min']:7.1f} {r['st_max']:7.1f}"
                  f" {r['mom_max']:6.1f} {bl[0]:6.1f} {bl[1]:6.1f} {bl[2]:6.1f}")
     L.append("")
     if "notes" in info:

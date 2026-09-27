@@ -20,14 +20,17 @@ import synth as sy
 import ambience as amb
 
 # ------------------------------------------------------------------ targets
-# Short-term loudness targets per section for the MUSIC bus before the bus effects
-# (earbud / reality / tape stop are applied after the fit and lower their sections).
-MUSIC_TARGET = {
-    "intro": -21.8, "courtyard": -18.6, "tv": -18.2, "village": -19.8, "dialup": -22.5,
-    "y2k": -14.0, "earbud": -14.0, "y2010": -13.4, "question": -20.5, "reality": -17.6,
-    "first": -16.8, "who": -15.4, "people": -12.8, "imagined": -19.6, "today": -17.4,
-    "rec": -12.8,
+# Final short-term loudness arc (LUFS) per section, as delivered in the master.  The
+# music bus is fitted to ARC - EXPECTED_TRIM before the bus effects (earbud / reality /
+# tape stop lower their sections on purpose), then the master trims to MASTER_TARGET.
+ARC = {
+    "intro": -21.5, "courtyard": -18.3, "tv": -17.6, "village": -19.3, "dialup": -21.5,
+    "y2k": -13.6, "earbud": -13.6, "y2010": -13.0, "question": -20.0, "reality": -17.6,
+    "first": -16.4, "who": -14.8, "people": -12.4, "imagined": -19.0, "today": -17.0,
+    "rec": -12.4,
 }
+EXPECTED_TRIM = 2.2
+MUSIC_TARGET = {k: v - EXPECTED_TRIM for k, v in ARC.items()}
 # ramp (s) used when moving between neighbouring section gains; the ramp ends at the
 # boundary so a new scene starts at its own level ("cut" boundaries use short ramps)
 FIT_RAMP = {"intro": 0.3, "courtyard": 1.5, "tv": 0.4, "village": 0.8, "dialup": 1.0, "y2k": 0.05,
@@ -44,7 +47,7 @@ STEMS = {
     "piano":        (0.0,  -13.0, -7.0,  None),
     "piano_bright": (-12.0, -14.0, -11.0, None),
     "musicbox":     (-13.0, -8.0,  -1.0,  None),
-    "celesta":      (-10.5, -9.0,  -2.0,  None),
+    "celesta":      (-7.5,  -9.0,  -2.0,  None),
     "bells":        (-10.0, -10.0, -3.0,  None),
     "strings":      (-4.5,  None,  -5.0,  None),
     "cello":        (-5.0,  None,  -7.0,  None),
@@ -52,14 +55,14 @@ STEMS = {
     "ep":           (-4.0,  -11.0, -16.0, None),
     "dr_kick":      (-5.0,  None,  None,  -18.0),
     "dr_snare":     (-7.0,  -16.0, None,  -12.0),
-    "dr_hats":      (-14.0, None,  None,  -16.0),
+    "dr_hats":      (-11.5, None,  None,  -16.0),
     "dr_perc":      (-15.0, -18.0, None,  -14.0),
     "dr_brush":     (-15.0, -12.0, -12.0, None),
-    "sub":          (-10.0, None,  None,  None),
+    "sub":          (-13.5, None,  None,  None),
     "pad":          (-11.0, None,  -6.0,  None),
     "shimmer":      (-17.0, None,  0.0,   None),
-    "pluck":        (-10.5, -9.0,  -14.0, None),
-    "chip":         (-9.5,  None,  None,  -10.0),
+    "pluck":        (-6.5,  -9.0,  -14.0, None),
+    "chip":         (-6.5,  None,  None,  -10.0),
 }
 
 # per-stem level automation (dB offsets) as (time, dB) breakpoints
@@ -67,7 +70,12 @@ AUTO = {
     "piano": [(0, 0), (66, 0), (66.2, -1.5), (101.9, -1.5), (102.1, 0.5), (137, 0.5), (138, 1.5),
               (146, 1.0), (147, 0), (168, 1.0)],
     "pad": [(0, 0), (60, 0), (60.5, 2.0), (65.5, 2.0), (66, 0)],
-    "strings": [(0, 0), (137.5, 0), (138.5, 1.0), (146.5, 0)],
+    "strings": [(0, 0), (137.5, 0), (138.3, 3.0), (145.5, 3.0), (147.0, 0)],
+    "cello": [(0, 0), (137.5, 0), (138.3, 2.0), (145.5, 2.0), (147.0, 0)],
+    "choir": [(0, 2.0)],
+    "dr_kick": [(0, 0), (164, 0), (165, 5.0)],
+    "dr_brush": [(0, 0), (164, 0), (165, 5.0)],
+    "dr_perc": [(0, 0), (164, 0), (165, 3.0)],
 }
 # piano hall-send automation (dB offsets on the send)
 PIANO_HALL = [(0, 3.0), (20.5, 3.0), (21.5, 0.0), (59.5, 0.0), (60.5, 2.0), (65.8, 2.0), (66.2, -9.0),
@@ -78,8 +86,8 @@ PIANO_HALL = [(0, 3.0), (20.5, 3.0), (21.5, 0.0), (59.5, 0.0), (60.5, 2.0), (65.
 WOW = [(0, 4.0), (60, 4.0), (66, 3.0), (89.5, 3.0), (90.5, 1.2), (101.9, 1.2), (102.1, 2.5), (110.8, 3.5),
        (120, 3.5), (147, 4.5), (156, 4.5), (162, 3.0), (168, 2.2)]
 FLUTTER = [(0, 0.9), (66, 0.7), (90, 0.3), (102, 0.6), (162, 0.6), (168, 0.5)]
-ROLLOFF = [(0, 9500), (21, 10500), (60, 10500), (66, 11000), (89.5, 11000), (90.5, 22000), (101.9, 22000),
-           (102.1, 12500), (126, 12500), (147, 10000), (156, 10000), (162, 13000), (168, 22000)]
+ROLLOFF = [(0, 12000), (21, 12500), (60, 12500), (66, 13000), (89.5, 13000), (90.5, 22000), (101.9, 22000),
+           (102.1, 14000), (126, 14000), (147, 12000), (156, 12000), (162, 14000), (168, 22000)]
 
 SFX_REVERB_SEND = -14.0   # dB into the room reverb for the SFX bus
 AMB = {  # ambience levels (dBFS RMS)
@@ -147,18 +155,18 @@ def sub_kick_layer(kick_part):
 
 def stem_eq():
     return {
-        "piano": dsp.eq(dsp.butter("high", 32, 2), dsp.rbj("peak", 260, 1.0, -1.5), dsp.rbj("peak", 2600, 0.9, 1.5),
-                        dsp.rbj("highshelf", 7000, 0.7, -2.0)),
+        "piano": dsp.eq(dsp.butter("high", 34, 2), dsp.rbj("peak", 330, 0.9, -2.5), dsp.rbj("peak", 2800, 0.8, 3.0),
+                        dsp.rbj("highshelf", 5500, 0.7, 3.0)),
         "piano_bright": dsp.eq(dsp.butter("high", 120, 2), dsp.rbj("highshelf", 5000, 0.7, 1.0)),
         "musicbox": dsp.eq(dsp.butter("high", 350, 2), dsp.butter("low", 9000, 2)),
         "celesta": dsp.eq(dsp.butter("high", 250, 2), dsp.butter("low", 10000, 2)),
         "bells": dsp.eq(dsp.butter("high", 220, 2), dsp.rbj("highshelf", 6000, 0.7, -2.0)),
-        "strings": dsp.eq(dsp.butter("high", 38, 2), dsp.rbj("peak", 2800, 0.9, -2.5), dsp.rbj("peak", 220, 0.8, 1.0),
-                          dsp.butter("low", 11000, 2)),
+        "strings": dsp.eq(dsp.butter("high", 38, 2), dsp.rbj("peak", 2800, 0.9, -1.0), dsp.rbj("peak", 350, 0.9, -1.5),
+                          dsp.butter("low", 13000, 2)),
         "cello": dsp.eq(dsp.butter("high", 55, 2), dsp.rbj("peak", 240, 0.9, 1.5), dsp.rbj("peak", 3000, 1.0, -2.0)),
         "choir": dsp.eq(dsp.butter("high", 160, 2), dsp.butter("low", 8500, 2), dsp.rbj("peak", 3000, 1.0, -2.0)),
         "ep": dsp.eq(dsp.butter("high", 90, 2), dsp.butter("low", 6500, 2), dsp.rbj("peak", 320, 1.0, -1.5)),
-        "dr_kick": dsp.eq(dsp.butter("high", 42, 2), dsp.butter("low", 4000, 2), dsp.rbj("peak", 2500, 1.0, 2.0)),
+        "dr_kick": dsp.eq(dsp.butter("high", 45, 2), dsp.butter("low", 5000, 2), dsp.rbj("peak", 2500, 1.0, 3.0)),
         "dr_snare": dsp.eq(dsp.butter("high", 130, 2), dsp.butter("low", 8500, 2), dsp.rbj("peak", 900, 1.0, 1.5)),
         "dr_hats": dsp.eq(dsp.butter("high", 4000, 2), dsp.butter("low", 10500, 2)),
         "dr_perc": dsp.eq(dsp.butter("high", 1500, 2), dsp.butter("low", 11000, 2)),
@@ -183,7 +191,7 @@ def prepare_stems(R, Y, S, log=log_default):
         x = R.pop(name) if name in R else Y.pop(name)
         x = np.asarray(x, dtype=np.float64)
         if name == "dr_kick":
-            x = x / (np.max(np.abs(x)) + 1e-12) + 0.30 * sub_kick_layer(S["dr_kick"])
+            x = x / (np.max(np.abs(x)) + 1e-12) + 0.20 * sub_kick_layer(S["dr_kick"])
         x = dsp.filt(x, EQ[name]) if name in EQ else x
         if name == "ep":
             x = dsp.tape_sat(x / (np.max(np.abs(x)) + 1e-12) * 0.5, 4.0) * 2.0
@@ -207,14 +215,29 @@ def prepare_stems(R, Y, S, log=log_default):
 _IRS = {}
 
 
+def _calibrate(ir):
+    """Scale a true-stereo IR so pink noise comes out at the same K-weighted loudness."""
+    from scipy import signal as sg
+    L = 1 << int(np.ceil(np.log2(len(ir))))
+    H = np.fft.rfft(ir, L, axis=0)
+    f = np.fft.rfftfreq(L, 1 / SR)
+    band = (f > 20) & (f < 20000)
+    _, k1 = sg.sosfreqz(dsp._K1, worN=f[band], fs=SR)
+    _, k2 = sg.sosfreqz(dsp._K2, worN=f[band], fs=SR)
+    W = np.abs(k1 * k2) ** 2 / f[band]
+    gL = np.sum((np.abs(H[band, 0]) ** 2 + np.abs(H[band, 2]) ** 2) * W) / np.sum(W)
+    gR = np.sum((np.abs(H[band, 1]) ** 2 + np.abs(H[band, 3]) ** 2) * W) / np.sum(W)
+    return ir / np.sqrt(0.5 * (gL + gR))
+
+
 def irs():
     if not _IRS:
-        _IRS["plate"] = dsp.make_ir(rt60=2.1, predelay=0.022, rt_low=1.1, rt_high=0.55, f_high=4500,
-                                    hf_cut=11000, lf_cut=120, build=0.008, er_taps=6, er_level=0.2, seed=11)
-        _IRS["hall"] = dsp.make_ir(rt60=3.4, predelay=0.036, rt_low=1.2, rt_high=0.38, f_high=3500,
-                                   hf_cut=7500, lf_cut=90, build=0.06, er_taps=12, er_level=0.35, seed=23)
-        _IRS["room"] = dsp.make_ir(rt60=0.55, predelay=0.008, rt_low=0.9, rt_high=0.6, f_high=4000,
-                                   hf_cut=9000, lf_cut=150, build=0.004, er_taps=10, er_level=0.5, seed=31)
+        _IRS["plate"] = _calibrate(dsp.make_ir(rt60=2.1, predelay=0.022, rt_low=1.1, rt_high=0.55, f_high=4500,
+                                               hf_cut=12000, lf_cut=120, build=0.008, er_taps=6, er_level=0.2, seed=11))
+        _IRS["hall"] = _calibrate(dsp.make_ir(rt60=3.4, predelay=0.036, rt_low=1.15, rt_high=0.45, f_high=3500,
+                                              hf_cut=9500, lf_cut=100, build=0.06, er_taps=12, er_level=0.35, seed=23))
+        _IRS["room"] = _calibrate(dsp.make_ir(rt60=0.55, predelay=0.008, rt_low=0.9, rt_high=0.6, f_high=4000,
+                                              hf_cut=10000, lf_cut=150, build=0.004, er_taps=10, er_level=0.5, seed=31))
     return _IRS
 
 

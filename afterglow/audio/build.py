@@ -129,11 +129,11 @@ def main():
     ]
     rows = analysis.write_report(os.path.join(OUT, "report.txt"), y, buses,
                                  dict(path=out_mix, sr=sr, channels=info.channels, notes=notes),
-                                 targets=None, events=events)
+                                 targets=mix.ARC, events=events)
     log("  report written")
     stem_table(os.path.join(OUT, "checks", "stem_levels.txt"), minfo["stem_blocks"], gc[:, 0], SECTIONS)
     analysis.spectrogram_png(os.path.join(OUT, "spectrogram.png"), y)
-    analysis.envelope_png(os.path.join(OUT, "envelope.png"), y, buses)
+    analysis.envelope_png(os.path.join(OUT, "envelope.png"), y, buses, targets=mix.ARC)
     for (a, b, name) in [(0, 10.5, "cold_open"), (40.5, 48.5, "tv_freeze"), (58, 68.5, "dialup_drop"),
                          (82, 92, "earbud"), (99.5, 105, "beat_cut"), (106.5, 115, "reality_bloom"),
                          (153, 163, "tape_stop"), (163, 172, "riser_rec"), (172, 182, "ending")]:
