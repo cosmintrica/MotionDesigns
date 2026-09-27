@@ -153,14 +153,14 @@ Props.pencil = function (ctx, p0, p1, w0, w1, phase) {
 // o: { pressed: {rec, play}, level: [l, r], reel, cassetteLabel, led }
 Props.deck = function (ctx, o) {
   const t = o.t || 0;
-  // body
+  // body (extends past the frame so camera moves never reveal an edge)
   ctx.fillStyle = linGrad(ctx, 0, 0, 0, H, [[0, '#2b2a2e'], [0.5, '#1d1c20'], [1, '#141316']]);
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(-W, -H, W * 3, H * 3);
   // brushed metal texture lines
   ctx.strokeStyle = 'rgba(255,255,255,0.025)'; ctx.lineWidth = 1;
   const r = mulberry32(44);
   ctx.beginPath();
-  for (let i = 0; i < 160; i++) { const yy = r() * H; ctx.moveTo(0, yy); ctx.lineTo(W, yy + (r() - 0.5) * 2); }
+  for (let i = 0; i < 160; i++) { const yy = r() * H; ctx.moveTo(-W, yy); ctx.lineTo(W * 2, yy + (r() - 0.5) * 2); }
   ctx.stroke();
   // cassette door (left)
   const dx = 150, dy = 170, dw = 900, dh = 560;
