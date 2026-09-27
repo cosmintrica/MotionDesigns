@@ -278,3 +278,28 @@ function camera(ctx, zoom, fx = W / 2, fy = H / 2, ox = 0, oy = 0, rot = 0) {
   ctx.scale(zoom, zoom);
   ctx.translate(-fx, -fy);
 }
+
+// film dust specks + an occasional scratch, drawn in 2D (cheap; replaces a per-pixel shader pass)
+function drawFilmDust(ctx, frame, amount) {
+  if (amount <= 0.001) return;
+  const r = mulberry32(frame * 7919 + 13);
+  const n = Math.floor(r() * 3.2 * amount + (r() < 0.5 * amount ? 1 : 0));
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const x = r() * W, y = r() * H, rad = 1 + r() * 3.2 * (r() < 0.2 ? 2.2 : 1);
+    ctx.globalAlpha = 0.45 + r() * 0.35;
+    ctx.fillStyle = r() < 0.55 ? '#f4eee0' : '#0a0806';
+    ctx.beginPath(); ctx.ellipse(x, y, rad, rad * (0.5 + r() * 0.8), r() * 3, 0, TAU); ctx.fill();
+    if (r() < 0.3) { ctx.lineWidth = 1; ctx.strokeStyle = ctx.fillStyle; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + (r() - 0.5) * 30, y + (r() - 0.5) * 30, x + (r() - 0.5) * 40, y + (r() - 0.5) * 40); ctx.stroke(); }
+  }
+  const blk = Math.floor(frame / 2);
+  if (hash(blk * 4.2 + 0.3) > 0.86) {
+    const sx = hash(blk * 1.9 + 0.7) * W;
+    ctx.globalAlpha = 0.16 * amount;
+    ctx.strokeStyle = '#ece6d8'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(sx, 0);
+    for (let y = 0; y <= H; y += 60) ctx.lineTo(sx + Math.sin(y * 0.01 + blk) * 3, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}

@@ -529,7 +529,7 @@ Props.game = (() => {
     const ex = ((200 - cam * 0.6) % 330 + 330) % 330;
     spr(BLOB, ex, 172, false);
     // hero: jumps at fixed times (sync with SFX)
-    const jumps = [1.1, 2.3, 4.4];
+    const jumps = [1.1, 2.3, 3.75];
     let jy = 0;
     for (const j of jumps) { const k = (gt - j) / 0.6; if (k > 0 && k < 1) jy = Math.sin(k * Math.PI) * 44; }
     const running = Math.floor(gt * 10) % 2 === 0;
@@ -676,7 +676,7 @@ Props.screen = (() => {
     const n = Math.floor(lt * 6) % 12;
     for (let i = 0; i < 12; i++) { x.fillStyle = i <= n ? '#1a1a1a' : '#9a9a9a'; x.fillRect(dx + 125 + i * 21, dy + 82, 9, 9); }
     x.fillStyle = '#000'; x.font = `15px ${UI}`; x.textBaseline = 'alphabetic';
-    const status = lt < 1.3 ? 'Dialing 0-800-4-WEB...' : lt < 3.6 ? 'Verifying user name and password...' : 'Connected at 56,000 bps';
+    const status = lt < 1.3 ? 'Dialing 0-800-4-WEB...' : lt < 4.6 ? 'Verifying user name and password...' : 'Connected at 56,000 bps';
     x.fillText('Status: ' + status, dx + 30, dy + 150);
     x.font = `13px ${UI}`; x.fillStyle = '#333';
     x.fillText('Duration: 00:00:' + String(Math.floor(lt)).padStart(2, '0'), dx + 30, dy + 178);

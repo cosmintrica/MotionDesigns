@@ -63,7 +63,9 @@ const Main = (() => {
     for (const c of CAPTIONS) if (t >= c.t0 && t < c.t1) Captions.draw(sctx, c, t);
     resetCtx(sctx);
     for (const o of OVERLAYS) if (t >= o.t0 && t < o.t1) { sctx.save(); o.draw(sctx, t - o.t0, t, o); sctx.restore(); resetCtx(sctx); }
-    Post.render(scene, lookAt(t), t, frame);
+    const look = lookAt(t);
+    drawFilmDust(sctx, frame, look.dust);
+    Post.render(scene, look, t, frame);
   }
 
   async function init() {

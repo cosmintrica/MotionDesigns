@@ -74,26 +74,27 @@ const OVERLAYS = [
   { t0: 48.6, t1: 60.0, draw: (ctx, lt, t) => drawDateStamp(ctx, "'99 8 3", env(t, 48.6, 60.0, 0.8, 0.6)) },
   { t0: 169.5, t1: 175.5, draw: (ctx, lt, t) => Props.recOSD(ctx, t, 168.0, env(t, 169.5, 175.5, 0.05, 0.8)) },
 ];
-const LOOK_DESK = { warmth: 0.2, bloom: 0.5, bloomThreshold: 0.55, haze: 0.08, halation: 0.3, grain: 0.05, vignette: 0.7, fade: 0.04, dust: 0.3 };
-const LOOK_TITLE = { warmth: 0.3, bloom: 0.7, bloomThreshold: 0.55, haze: 0.22, halation: 0.4, grain: 0.055, vignette: 0.6, leak: 0.25, leakSeed: 2, dust: 0.6, weave: 0.8 };
-const LOOK90 = { warmth: 0.25, sat: 1.05, bloom: 0.7, haze: 0.14, halation: 0.35, grain: 0.06, dust: 0.8, leak: 0.12, vignette: 0.5, fade: 0.05, weave: 0.7 };
+const LOOK_DESK = { warmth: 0.2, bloom: 0.5, bloomThreshold: 0.55, haze: 0.08, halation: 0.3, grain: 0.04, vignette: 0.7, fade: 0.04, dust: 0.3 };
+const LOOK_TITLE = { warmth: 0.3, bloom: 0.7, bloomThreshold: 0.55, haze: 0.22, halation: 0.4, grain: 0.044, vignette: 0.6, leak: 0.25, leakSeed: 2, dust: 0.6, weave: 0.8 };
+const LOOK90 = { warmth: 0.25, sat: 1.05, bloom: 0.7, haze: 0.14, halation: 0.35, grain: 0.048, dust: 0.8, leak: 0.12, vignette: 0.5, fade: 0.05, weave: 0.7 };
 const LOOK90N = Object.assign({}, LOOK90, { warmth: 0.12, bloom: 0.8, haze: 0.12, leak: 0.05 });
 const LOOK_TV = Object.assign({}, LOOK90, { warmth: -0.05, bloom: 0.9, bloomThreshold: 0.5, haze: 0.16, leak: 0.0, vignette: 0.6 });
-const LOOK_CRT = { warmth: -0.1, sat: 1.0, bloom: 0.8, bloomThreshold: 0.55, haze: 0.1, halation: 0.15, grain: 0.05, vignette: 0.65, crt: 0.2, vhs: 0.25, ca: 0.9, weave: 0.2 };
-const LOOK_00 = { warmth: -0.06, sat: 1.08, contrast: 1.08, bloom: 0.55, bloomThreshold: 0.65, haze: 0.08, halation: 0.12, grain: 0.035, vignette: 0.45, crt: 0.12, ca: 0.6, weave: 0.1 };
-const LOOK_NIGHT = { warmth: 0.08, sat: 1.0, bloom: 0.9, bloomThreshold: 0.5, haze: 0.18, halation: 0.35, grain: 0.05, vignette: 0.6, weave: 0.3 };
-const LOOK_10 = { warmth: 0.18, sat: 1.0, contrast: 0.96, fade: 0.1, bloom: 0.7, bloomThreshold: 0.55, haze: 0.18, halation: 0.25, grain: 0.04, vignette: 0.45, leak: 0.25, leakSeed: 5, weave: 0.2 };
-const LOOK_DARK = { warmth: 0.15, bloom: 0.8, bloomThreshold: 0.45, haze: 0.15, halation: 0.3, grain: 0.05, vignette: 0.7, weave: 0.3, dust: 0.4 };
-const LOOK_REAL = { warmth: -0.15, sat: 0.55, contrast: 0.95, bloom: 0.15, bloomThreshold: 0.8, haze: 0.02, halation: 0.0, grain: 0.04, vignette: 0.35, fade: 0.06, weave: 0.1, flicker: 0.0 };
-const LOOK_MEM = { warmth: 0.32, sat: 1.1, bloom: 0.95, bloomThreshold: 0.5, haze: 0.3, halation: 0.42, grain: 0.06, vignette: 0.5, leak: 0.25, leakSeed: 7, dust: 0.8, weave: 0.8, fade: 0.05 };
-const LOOK_LAPSE = { warmth: 0.2, sat: 1.05, bloom: 0.6, bloomThreshold: 0.62, haze: 0.14, halation: 0.3, grain: 0.055, vignette: 0.55, leak: 0.12, leakSeed: 3, dust: 0.6, weave: 0.6 };
-const LOOK_SHADOW = { warmth: 0.2, sat: 1.0, bloom: 0.8, bloomThreshold: 0.5, haze: 0.14, halation: 0.35, grain: 0.055, vignette: 0.6, weave: 0.4, dust: 0.3 };
-const LOOK_PROJ = { warmth: 0.18, sat: 0.95, bloom: 0.9, bloomThreshold: 0.45, haze: 0.2, halation: 0.4, grain: 0.07, vignette: 0.7, flicker: 0.045, dust: 1.2, weave: 1.0 };
-const LOOK_NOW = { warmth: 0.0, sat: 1.0, contrast: 1.04, bloom: 0.3, bloomThreshold: 0.75, haze: 0.04, halation: 0.05, grain: 0.012, vignette: 0.2, weave: 0.0, fade: 0.0, flicker: 0.0, ca: 0.2 };
+const LOOK_CRT = { warmth: -0.1, sat: 1.0, bloom: 0.8, bloomThreshold: 0.55, haze: 0.1, halation: 0.15, grain: 0.04, vignette: 0.65, crt: 0.2, vhs: 0.25, ca: 0.9, weave: 0.2 };
+const LOOK_00 = { warmth: -0.06, sat: 1.08, contrast: 1.08, bloom: 0.55, bloomThreshold: 0.65, haze: 0.08, halation: 0.12, grain: 0.028, vignette: 0.45, crt: 0.12, ca: 0.6, weave: 0.1 };
+const LOOK_PHONE = { warmth: -0.02, sat: 1.05, contrast: 1.05, bloom: 0.75, bloomThreshold: 0.55, haze: 0.12, halation: 0.2, grain: 0.028, vignette: 0.55, weave: 0.1 };
+const LOOK_NIGHT = { warmth: 0.08, sat: 1.0, bloom: 0.9, bloomThreshold: 0.5, haze: 0.18, halation: 0.35, grain: 0.04, vignette: 0.6, weave: 0.3 };
+const LOOK_10 = { warmth: 0.18, sat: 1.0, contrast: 0.96, fade: 0.1, bloom: 0.7, bloomThreshold: 0.55, haze: 0.18, halation: 0.25, grain: 0.032, vignette: 0.45, leak: 0.25, leakSeed: 5, weave: 0.2 };
+const LOOK_DARK = { warmth: 0.15, bloom: 0.8, bloomThreshold: 0.45, haze: 0.15, halation: 0.3, grain: 0.04, vignette: 0.7, weave: 0.3, dust: 0.4 };
+const LOOK_REAL = { warmth: -0.15, sat: 0.55, contrast: 0.95, bloom: 0.15, bloomThreshold: 0.8, haze: 0.02, halation: 0.0, grain: 0.032, vignette: 0.35, fade: 0.06, weave: 0.1, flicker: 0.0 };
+const LOOK_MEM = { warmth: 0.32, sat: 1.1, bloom: 0.95, bloomThreshold: 0.5, haze: 0.3, halation: 0.42, grain: 0.048, vignette: 0.5, leak: 0.25, leakSeed: 7, dust: 0.8, weave: 0.8, fade: 0.05 };
+const LOOK_LAPSE = { warmth: 0.2, sat: 1.05, bloom: 0.6, bloomThreshold: 0.62, haze: 0.14, halation: 0.3, grain: 0.044, vignette: 0.55, leak: 0.12, leakSeed: 3, dust: 0.6, weave: 0.6 };
+const LOOK_SHADOW = { warmth: 0.2, sat: 1.0, bloom: 0.8, bloomThreshold: 0.5, haze: 0.14, halation: 0.35, grain: 0.044, vignette: 0.6, weave: 0.4, dust: 0.3 };
+const LOOK_PROJ = { warmth: 0.18, sat: 0.95, bloom: 0.9, bloomThreshold: 0.45, haze: 0.2, halation: 0.4, grain: 0.056, vignette: 0.7, flicker: 0.045, dust: 1.2, weave: 1.0 };
+const LOOK_NOW = { warmth: 0.0, sat: 1.0, contrast: 1.04, bloom: 0.3, bloomThreshold: 0.75, haze: 0.04, halation: 0.05, grain: 0.01, vignette: 0.2, weave: 0.0, fade: 0.0, flicker: 0.0, ca: 0.2 };
 const LOOK_VILLAGE = Object.assign({}, LOOK90, { warmth: 0.05, sat: 1.0, bloom: 0.95, bloomThreshold: 0.45, haze: 0.12, leak: 0.0, vignette: 0.55, dust: 0.5 });
 const LOOKS = [ { t: 0, look: LOOK_DESK }, { t: 8.8, look: LOOK_DESK }, { t: 9.6, look: LOOK_TITLE }, { t: 20.4, look: LOOK_TITLE }, { t: 22, look: LOOK90 }, { t: 33, look: LOOK90 }, { t: 37, look: LOOK90N }, { t: 41.9, look: LOOK90N },
   { t: 42.0, look: LOOK_TV }, { t: 48.0, look: LOOK_TV }, { t: 48.9, look: LOOK_VILLAGE }, { t: 60.1, look: LOOK_VILLAGE },
-  { t: 60.2, look: LOOK_CRT }, { t: 65.9, look: LOOK_CRT }, { t: 66.0, look: LOOK_00 }, { t: 83.9, look: LOOK_00 },
+  { t: 60.2, look: LOOK_CRT }, { t: 65.9, look: LOOK_CRT }, { t: 66.0, look: LOOK_00 }, { t: 74.9, look: LOOK_00 }, { t: 75.0, look: LOOK_PHONE }, { t: 83.9, look: LOOK_PHONE },
   { t: 84.0, look: LOOK_NIGHT }, { t: 89.8, look: LOOK_NIGHT }, { t: 90.4, look: LOOK_10 }, { t: 101.9, look: LOOK_10 },
   { t: 102.0, look: LOOK_DARK }, { t: 108.0, look: LOOK_DARK }, { t: 108.2, look: LOOK_REAL }, { t: 110.8, look: LOOK_REAL }, { t: 111.9, look: LOOK_MEM }, { t: 119.8, look: LOOK_MEM }, { t: 120.3, look: LOOK_LAPSE }, { t: 126, look: LOOK_LAPSE },
   { t: 126.6, look: LOOK_SHADOW }, { t: 138, look: LOOK_SHADOW }, { t: 139, look: LOOK_VILLAGE }, { t: 147, look: LOOK_VILLAGE },

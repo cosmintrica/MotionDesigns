@@ -15,7 +15,7 @@ const LOOK_DEFAULTS = {
   bloom: 0.55, bloomThreshold: 0.62, bloomKnee: 0.35, bloomTint: [1.0, 0.92, 0.82],
   haze: 0.12, halation: 0.25,
   ca: 0.6, vignette: 0.45,
-  grain: 0.055, grainSize: 1.35, weave: 0.5, flicker: 0.015, dust: 0.0,
+  grain: 0.045, grainSize: 1.5, weave: 0.5, flicker: 0.015, dust: 0.0,
   vhs: 0, crt: 0, leak: 0, leakSeed: 0,
   letterbox: 0, black: 0, white: 0,
 };
@@ -26,6 +26,7 @@ const Post = (() => {
   const levels = [];
   const hlevels = [];
   let floatOK = false;
+  let overlayFbo;
 
   const VS = `#version 300 es
   in vec2 aPos; out vec2 vUv;
@@ -71,9 +72,33 @@ const Post = (() => {
     o = vec4(s / 12.0 + texture(uAdd, vUv).rgb * uAddW, 1.0);
   }`;
 
+  const FS_OVERLAY = `#version 300 es
+  precision highp float; in vec2 vUv; out vec4 o;
+  uniform float uTime, uLeak, uLeakSeed, uVignette;
+  void main(){
+    vec2 uv = vUv;
+    vec3 leak = vec3(0.0);
+    if (uLeak > 0.001) {
+      for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        vec2 c = vec2(fract(uLeakSeed * 0.37 + fi * 0.43) * 1.3 - 0.15 + 0.22 * sin(uTime * 0.31 + fi * 2.1),
+                      (i == 1 ? 0.05 : 0.95) + 0.18 * cos(uTime * 0.23 + fi * 1.7));
+        float rr = 0.32 + 0.12 * sin(uTime * 0.47 + fi * 3.0);
+        vec2 dd = (uv - c) * vec2(1.7778, 1.0);
+        float a = exp(-dot(dd, dd) / (rr * rr));
+        vec3 lc = i == 0 ? vec3(1.0, 0.36, 0.08) : (i == 1 ? vec3(1.0, 0.62, 0.22) : vec3(0.95, 0.16, 0.30));
+        leak += lc * a;
+      }
+      leak = clamp(leak * uLeak, 0.0, 1.0);
+    }
+    vec2 d = uv - 0.5;
+    float vig = pow(clamp(length(d * vec2(1.05, 0.95)) * 1.3, 0.0, 1.4), 2.3);
+    o = vec4(leak, clamp(1.0 - uVignette * vig, 0.0, 1.0));
+  }`;
+
   const FS_COMPOSITE = `#version 300 es
   precision highp float; in vec2 vUv; out vec4 o;
-  uniform sampler2D uScene, uBloomTex, uHazeTex, uNoise;
+  uniform sampler2D uScene, uBloomTex, uHazeTex, uNoise, uOverlay;
   uniform vec2 uRes, uWeave;
   uniform float uTime, uFrame;
   uniform float uExposure, uContrast, uSat, uWarmth, uTint, uFade, uSplit;
@@ -130,20 +155,8 @@ const Post = (() => {
     l = dot(col, vec3(0.2126, 0.7152, 0.0722));
     col = mix(vec3(l), col, uSat);
     col = mix(col, uFadeColor + col * (1.0 - uFadeColor), uFade);
-    if (uLeak > 0.001) {
-      vec3 leak = vec3(0.0);
-      for (int i = 0; i < 3; i++) {
-        float fi = float(i);
-        vec2 c = vec2(fract(uLeakSeed * 0.37 + fi * 0.43) * 1.3 - 0.15 + 0.22 * sin(uTime * 0.31 + fi * 2.1),
-                      (i == 1 ? 0.05 : 0.95) + 0.18 * cos(uTime * 0.23 + fi * 1.7));
-        float rr = 0.32 + 0.12 * sin(uTime * 0.47 + fi * 3.0);
-        vec2 dd = (uv - c) * vec2(1.7778, 1.0);
-        float a = exp(-dot(dd, dd) / (rr * rr));
-        vec3 lc = i == 0 ? vec3(1.0, 0.36, 0.08) : (i == 1 ? vec3(1.0, 0.62, 0.22) : vec3(0.95, 0.16, 0.30));
-        leak += lc * a;
-      }
-      col = 1.0 - (1.0 - col) * (1.0 - clamp(leak * uLeak, 0.0, 1.0));
-    }
+    vec4 ov = texture(uOverlay, vUv);
+    col = 1.0 - (1.0 - col) * (1.0 - ov.rgb);
     if (uCrt > 0.001) {
       float sl = 0.5 + 0.5 * cos(gl_FragCoord.y * 3.14159 * 0.6667);
       col *= 1.0 - uCrt * 0.22 * sl;
@@ -151,37 +164,19 @@ const Post = (() => {
       vec3 mask = m < 1.0 ? vec3(1.0, 0.85, 0.85) : (m < 2.0 ? vec3(0.85, 1.0, 0.85) : vec3(0.85, 0.85, 1.0));
       col *= mix(vec3(1.0), mask, uCrt * 0.5);
     }
-    float vig = pow(clamp(length(d * vec2(1.05, 0.95)) * 1.3, 0.0, 1.4), 2.3);
-    col *= 1.0 - uVignette * vig;
+    col *= ov.a;
     // film grain (soft, luminance weighted)
     vec2 gp = gl_FragCoord.xy / (256.0 * uGrainSize) + vec2(h12(vec2(fr, 1.7)), h12(vec2(fr, 9.1)));
     vec2 nn = texture(uNoise, gp).rg;
     float n = nn.x + nn.y - 1.0;
     l = dot(col, vec3(0.299, 0.587, 0.114));
     col += n * uGrain * (0.55 + 0.9 * clamp(1.0 - abs(l - 0.42) * 1.7, 0.0, 1.0));
-    if (uDust > 0.001) {
-      vec2 cell = floor(gl_FragCoord.xy / 96.0);
-      float rnd = h12(cell + fr * 7.13);
-      if (rnd > 1.0 - 0.004 * uDust) {
-        vec2 cc = (cell + 0.5 + (vec2(h12(cell + fr), h12(cell - fr)) - 0.5) * 0.6) * 96.0;
-        float rad = 1.0 + 3.2 * h12(cell * 1.3 + fr);
-        float sp = smoothstep(rad, rad * 0.25, length((gl_FragCoord.xy - cc) * vec2(1.0, 0.6 + h12(cell + 5.0))));
-        col = mix(col, h12(cell + 3.3) > 0.55 ? vec3(0.96, 0.93, 0.86) : vec3(0.03), sp * 0.75);
-      }
-      float blk = floor(fr / 2.0);
-      if (h12(vec2(blk, 4.2)) > 0.86) {
-        float sx = h12(vec2(blk, 1.9)) * uRes.x;
-        float ln = smoothstep(1.3, 0.0, abs(gl_FragCoord.x - sx - sin(gl_FragCoord.y * 0.01 + blk) * 3.0));
-        col = mix(col, vec3(0.92, 0.9, 0.84), ln * 0.22 * uDust);
-      }
-    }
     if (uLetterbox > 0.0) {
       float yy = vUv.y;
       if (yy < uLetterbox || yy > 1.0 - uLetterbox) col = vec3(0.0);
     }
     col = mix(col, vec3(0.0), uBlack);
     col = mix(col, vec3(1.0, 0.94, 0.84), uWhite);
-    col += (h12(gl_FragCoord.xy + fr * 1.37) - 0.5) / 255.0;
     o = vec4(clamp(col, 0.0, 1.0), 1.0);
   }`;
 
@@ -228,7 +223,7 @@ const Post = (() => {
     gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, preserveDrawingBuffer: true });
     if (!gl) throw new Error('WebGL2 unavailable');
     floatOK = /float16/.test(location.search) && !!gl.getExtension('EXT_color_buffer_float');
-    P.pre = program(FS_PREFILTER); P.down = program(FS_DOWN); P.up = program(FS_UP); P.comp = program(FS_COMPOSITE);
+    P.pre = program(FS_PREFILTER); P.down = program(FS_DOWN); P.up = program(FS_UP); P.comp = program(FS_COMPOSITE); P.ov = program(FS_OVERLAY);
     quadBuf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -242,6 +237,7 @@ const Post = (() => {
     // bloom chain: 1/2 .. 1/64 ; haze chain 1/4 .. 1/64
     let w = W / 2, h = H / 2;
     for (let i = 0; i < 6; i++) { levels.push({ down: fbo(Math.ceil(w), Math.ceil(h)), up: fbo(Math.ceil(w), Math.ceil(h)) }); w /= 2; h /= 2; }
+    overlayFbo = fbo(W / 8, H / 8);
     w = W / 4; h = H / 4;
     for (let i = 0; i < 5; i++) { hlevels.push({ down: fbo(Math.ceil(w), Math.ceil(h)), up: fbo(Math.ceil(w), Math.ceil(h)) }); w /= 2; h /= 2; }
   }
@@ -307,8 +303,12 @@ const Post = (() => {
     const wx = (fbm(t * 1.7 + 11.1, 2) * 0.6 + (hash(frame * 1.31) - 0.5) * 0.25) * L.weave * 0.0009;
     const wy = (fbm(t * 1.3 + 3.7, 2) * 0.6 + (hash(frame * 2.17) - 0.5) * 0.25) * L.weave * 0.0013;
     const flick = (hash(frame * 0.713 + 5.1) - 0.5) * 2 * L.flicker;
+    pass(P.ov, overlayFbo, (u) => {
+      gl.uniform1f(u.uTime, t); gl.uniform1f(u.uLeak, L.leak); gl.uniform1f(u.uLeakSeed, L.leakSeed); gl.uniform1f(u.uVignette, L.vignette);
+    });
     pass(P.comp, null, (u) => {
       bindTex(0, texScene); gl.uniform1i(u.uScene, 0);
+      bindTex(4, overlayFbo.t); gl.uniform1i(u.uOverlay, 4);
       bindTex(1, b.tex); gl.uniform1i(u.uBloomTex, 1);
       bindTex(2, hz.tex); gl.uniform1i(u.uHazeTex, 2);
       bindTex(3, texNoise); gl.uniform1i(u.uNoise, 3);

@@ -990,7 +990,7 @@ Scenes.window = (ctx, lt, t) => {
 Scenes.projector = (ctx, lt, t) => {
   ctx.fillStyle = '#050407'; ctx.fillRect(0, 0, W, H);
   // the screen at the left shows flickering memories
-  const sx = 110, sy = 250, sw = 760, sh = 430;
+  const sx = 70, sy = 190, sw = 900, sh = 506;
   const frames = [(c, tt) => courtyard(c, tt, { mode: 'golden', dusk: 0.1 }), (c, tt) => friendsPhoto(c, W, H, tt, 1), (c, tt) => Scenes.keyCloseup(c, 1.2, tt)];
   const idx = Math.floor(lt / 3) % frames.length;
   const mem = Scenes.projector.mem || (Scenes.projector.mem = makeCanvas(480, 270));
@@ -999,11 +999,11 @@ Scenes.projector = (ctx, lt, t) => {
   mx.save(); frames[idx](mx, t); mx.restore();
   const flick = 0.82 + 0.18 * hash(Math.floor(t * 24) * 1.7);
   ctx.save();
-  ctx.globalAlpha = flick;
+  ctx.globalAlpha = 0.88 * flick;
   ctx.drawImage(mc, sx, sy, sw, sh);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'lighter';
-  ctx.fillStyle = `rgba(255,230,190,${0.12 * flick})`; ctx.fillRect(sx, sy, sw, sh);
+  ctx.fillStyle = `rgba(255,230,190,${0.04 * flick})`; ctx.fillRect(sx, sy, sw, sh);
   ctx.globalCompositeOperation = 'source-over';
   // film frame edge + a scratch or two
   ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 6; ctx.strokeRect(sx, sy, sw, sh);
