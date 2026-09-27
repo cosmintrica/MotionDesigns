@@ -82,7 +82,7 @@ async function launchPage(port, label) {
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
   page.on('pageerror', (e) => console.error(`[${label}] pageerror`, e.message));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.error(`[${label}] ${m.type()}: ${m.text()}`); });
-  await page.goto(`http://127.0.0.1:${port}/index.html`);
+  await page.goto(`http://127.0.0.1:${port}/${opt('page', 'index.html')}`);
   await page.waitForFunction(() => window.READY || window.INIT_ERROR, null, { timeout: 120000 });
   const err = await page.evaluate(() => window.INIT_ERROR);
   if (err) throw new Error(err);
