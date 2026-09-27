@@ -128,30 +128,51 @@ async function main() {
     let done = 0;
     const segFiles = queue.map(([a]) => path.join(segDir, `seg_${String(a).padStart(6, '0')}.mkv`));
     const skipExisting = flag('resume');
+    const chunkTimeoutMs = +(opt('chunk-timeout', '900')) * 1000;
     await Promise.all(Array.from({ length: nW }, async (_, wi) => {
-      const { browser, page } = await launchPage(port, 'w' + wi);
+      let ctx = await launchPage(port, 'w' + wi);
       while (queue.length) {
         const [a, b] = queue.shift();
         const file = path.join(segDir, `seg_${String(a).padStart(6, '0')}.mkv`);
         if (skipExisting && fs.existsSync(file) && fs.statSync(file).size > 1000) { done += b - a; continue; }
-        const job = `j${a}`;
-        const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(FPS), '-i', '-',
-          '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', crf, '-threads', '2',
-          '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv', file + '.tmp.mkv']);
-        const exited = new Promise((r) => ff.on('exit', r));
-        jobs.set(job, { ff });
-        const ts = Date.now();
-        await page.evaluate(([x, y, j]) => Main.runRange(x, y, j), [a, b, job]);
-        ff.stdin.end();
-        const code = await exited;
-        if (code !== 0) throw new Error('ffmpeg failed for ' + job);
-        fs.renameSync(file + '.tmp.mkv', file);
-        jobs.delete(job);
-        done += b - a;
-        const el = (Date.now() - t0) / 1000;
-        console.log(`[w${wi}] frames ${a}-${b} in ${((Date.now() - ts) / 1000).toFixed(1)}s | ${done}/${total} | elapsed ${el.toFixed(0)}s | eta ${(el / done * (total - done)).toFixed(0)}s`);
+        for (let attempt = 1; ; attempt++) {
+          const job = `j${a}_${attempt}`;
+          const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`, '-r', String(FPS), '-i', '-',
+            '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', crf, '-threads', '2',
+            '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv', file + '.tmp.mkv']);
+          ff.stdin.on('error', () => {});
+          const exited = new Promise((r) => ff.on('exit', r));
+          jobs.set(job, { ff });
+          const ts = Date.now();
+          try {
+            // a crashed/hung renderer (e.g. OOM-killed GPU process) must not stall the whole render
+            await Promise.race([
+              ctx.page.evaluate(([x, y, j]) => Main.runRange(x, y, j), [a, b, job]),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('chunk timeout')), chunkTimeoutMs)),
+              new Promise((_, rej) => ctx.page.once('crash', () => rej(new Error('page crashed')))),
+            ]);
+            ff.stdin.end();
+            const code = await exited;
+            if (code !== 0) throw new Error('ffmpeg exit ' + code);
+            fs.renameSync(file + '.tmp.mkv', file);
+            jobs.delete(job);
+            done += b - a;
+            const el = (Date.now() - t0) / 1000;
+            console.log(`[w${wi}] frames ${a}-${b} in ${((Date.now() - ts) / 1000).toFixed(1)}s | ${done}/${total} | elapsed ${el.toFixed(0)}s | eta ${(el / done * (total - done)).toFixed(0)}s`);
+            break;
+          } catch (e) {
+            console.error(`[w${wi}] chunk ${a}-${b} attempt ${attempt} failed: ${e.message}; relaunching browser`);
+            jobs.delete(job);
+            try { ff.kill('SIGKILL'); } catch {}
+            await exited.catch(() => {});
+            try { fs.unlinkSync(file + '.tmp.mkv'); } catch {}
+            try { await ctx.browser.close(); } catch {}
+            if (attempt >= 3) throw e;
+            ctx = await launchPage(port, 'w' + wi);
+          }
+        }
       }
-      await browser.close();
+      await ctx.browser.close();
     }));
     const list = path.join(segDir, 'list.txt');
     fs.writeFileSync(list, segFiles.map((f) => `file '${f}'`).join('\n'));

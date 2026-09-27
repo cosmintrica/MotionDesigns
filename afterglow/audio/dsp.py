@@ -186,7 +186,21 @@ def eq(*rows):
     return np.vstack(rows)
 
 
+_TINY = {}
+
+
+def antidenormal(x):
+    """Add a -300 dB DC + Nyquist offset so IIR states never decay into (slow) denormals."""
+    key = (len(x), x.ndim)
+    if key not in _TINY:
+        v = 1e-15 * (1.5 + (np.arange(len(x)) % 2))
+        _TINY.clear()
+        _TINY[key] = v[:, None] if x.ndim == 2 else v
+    return x + _TINY[key]
+
+
 def filt(x, sos, zero_phase=False):
+    x = antidenormal(np.asarray(x, dtype=float))
     if zero_phase:
         return signal.sosfiltfilt(sos, x, axis=0)
     return signal.sosfilt(sos, x, axis=0)
@@ -337,19 +351,24 @@ def make_ir(rt60=2.4, predelay=0.03, length=None, rt_low=1.25, rt_high=0.45,
     return ir
 
 
-def _fftconv_pair(x, ir, full=False):
-    """True-stereo FFT convolution with one big multithreaded FFT."""
+def _fftconv_pair(x, ir, full=False, block=1 << 20):
+    """True-stereo FFT convolution, block overlap-add (low memory, multithreaded FFTs)."""
     from scipy import fft as sfft
     x = to_stereo(x)
     n, m = len(x), len(ir)
-    L = sfft.next_fast_len(n + m - 1, real=True)
-    X = sfft.rfft(x, L, axis=0, workers=4)
-    H = sfft.rfft(ir, L, axis=0, workers=4)
-    YL = X[:, 0] * H[:, 0] + X[:, 1] * H[:, 2]
-    YR = X[:, 0] * H[:, 1] + X[:, 1] * H[:, 3]
-    del X, H
-    out = sfft.irfft(np.stack([YL, YR], axis=1), L, axis=0, workers=4)
-    return out[:n + m - 1] if full else out[:n]
+    L = sfft.next_fast_len(block + m - 1, real=True)
+    H = sfft.rfft(ir.astype(np.float64), L, axis=0, workers=4)
+    out = np.zeros((n + m - 1, 2))
+    for s in range(0, n, block):
+        seg = np.asarray(x[s:s + block], dtype=np.float64)
+        if not np.any(seg):
+            continue
+        X = sfft.rfft(seg, L, axis=0, workers=4)
+        Y = np.stack([X[:, 0] * H[:, 0] + X[:, 1] * H[:, 2], X[:, 0] * H[:, 1] + X[:, 1] * H[:, 3]], axis=1)
+        y = sfft.irfft(Y, L, axis=0, workers=4)
+        e = min(len(out), s + L)
+        out[s:e] += y[:e - s]
+    return out if full else out[:n]
 
 
 def convolve_reverb(x, ir):
@@ -392,8 +411,8 @@ def smooth_random(n, rate_hz, rng, dec=480):
     return np.interp(np.arange(n) / dec, np.arange(m), r)
 
 
-def wow_flutter(x, wow_cents, flutter_cents, rng, wow_rate=0.62, flutter_rate=7.3, t0=0.0):
-    """Tape wow & flutter as a modulated fractional delay.
+def wow_flutter(x, wow_cents, flutter_cents, rng, wow_rate=0.62, flutter_rate=7.3, t0=0.0, chunk=480000):
+    """Tape wow & flutter as a modulated fractional delay (processed in chunks).
 
     wow_cents / flutter_cents: scalars or per-sample arrays (peak deviation).
     """
@@ -403,12 +422,17 @@ def wow_flutter(x, wow_cents, flutter_cents, rng, wow_rate=0.62, flutter_rate=7.
         + 0.3 * smooth_random(n, 0.4, rng)
     flut = 0.6 * np.sin(2 * np.pi * flutter_rate * t + rng.uniform(0, 6.28)) \
         + 0.4 * np.sin(2 * np.pi * (flutter_rate * 1.37) * t + rng.uniform(0, 6.28))
+    del t
     cents = np.asarray(wow_cents) * wow + np.asarray(flutter_cents) * flut
-    ratio = 2.0 ** (cents / 1200.0)
-    drift = np.cumsum(ratio - 1.0)
+    del wow, flut
+    drift = np.cumsum(2.0 ** (cents / 1200.0) - 1.0)
+    del cents
     drift -= np.linspace(drift[0], drift[-1], n)     # keep long-term sync exact
-    pos = np.arange(n) + drift
-    return read_at(x, pos)
+    out = np.empty(x.shape, dtype=np.float64)
+    for s in range(0, n, chunk):
+        e = min(n, s + chunk)
+        out[s:e] = read_at(x, np.arange(s, e) + drift[s:e])
+    return out
 
 
 def tape_stop(x, t_start, dur, power=1.35, resume_at=None):
@@ -571,8 +595,7 @@ _K2 = np.array([[1.0, -2.0, 1.0, 1.0, -1.99004745483398, 0.99007225036621]])
 
 
 def k_weight(x):
-    y = signal.sosfilt(_K1, x, axis=0)
-    return signal.sosfilt(_K2, y, axis=0)
+    return signal.sosfilt(np.vstack([_K1, _K2]), antidenormal(np.asarray(x, dtype=float)), axis=0)
 
 
 def _block_power(x, win, hop):

@@ -112,10 +112,8 @@ def chip_freeze(y, t0, t1, rng):
 
 
 def render_synth_parts(S):
-    return {
-        "pad": render_pad(S["pad"]),
-        "sub": render_sub(S["sub"]),
-        "shimmer": render_shimmer(S["shimmer"]),
-        "pluck": render_pluck(S["pluck"]),
-        "chip": render_chip(S["chip"]),
-    }
+    out = {}
+    for k, fn in (("pad", render_pad), ("sub", render_sub), ("shimmer", render_shimmer),
+                  ("pluck", render_pluck), ("chip", render_chip)):
+        out[k] = fn(S[k]).astype(np.float32)
+    return out

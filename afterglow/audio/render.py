@@ -51,7 +51,7 @@ def render_parts(parts, midi_dir, wav_dir, jobs=4, log=print):
             list(ex.map(job, todo))
     out = {}
     for name, wav in paths.items():
-        x, sr = sf.read(wav, dtype="float64", always_2d=True)
+        x, sr = sf.read(wav, dtype="float32", always_2d=True)
         assert sr == SR
         if len(x) < N_SAMPLES:
             x = np.pad(x, ((0, N_SAMPLES - len(x)), (0, 0)))

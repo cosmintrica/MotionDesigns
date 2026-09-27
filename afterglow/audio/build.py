@@ -41,6 +41,31 @@ def write24(path, x, rng):
     sf.write(path, y, SR, subtype="PCM_24")
 
 
+def stem_table(path, blocks, gc, sections):
+    """Gated loudness (LUFS, after arc gain + master trim) of every stem in every section."""
+    w = int(0.4 * SR)
+    k = len(gc) // w
+    g2 = (gc[:k * w] ** 2).reshape(k, w).mean(axis=1)
+    hdr = f"{'stem':13s}" + "".join(f"{s[0][:8]:>9s}" for s in sections)
+    lines = ["Per-stem gated loudness per section (LUFS, pre-bus, arc gain + trim applied; '.' = silent)", hdr]
+    for nm, bp in blocks.items():
+        bp = bp[:k] * g2[:len(bp)]
+        row = f"{nm:13s}"
+        for key, lab, a, bb in sections:
+            z = bp[int(a / 0.4):max(int(a / 0.4) + 1, int(bb / 0.4))]
+            z = z[z > 1e-9]
+            if len(z) == 0:
+                row += f"{'.':>9s}"
+                continue
+            l = -0.691 + 10 * np.log10(z)
+            rel = -0.691 + 10 * np.log10(z.mean()) - 10
+            z2 = z[l > rel]
+            row += f"{-0.691 + 10 * np.log10(z2.mean()):9.1f}"
+        lines.append(row)
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def main():
     t_start = time.time()
     os.makedirs(os.path.join(OUT, "stems"), exist_ok=True)
@@ -59,7 +84,9 @@ def main():
     log("[3/6] synthesising numpy parts (pads, sub, chiptune, plucks, shimmer)")
     Y = render_synth_parts(S)
     log("[4/6] mixing the music bus")
-    music, stems, rets, gains = mix.build_music(R, Y, S, log=log)
+    music, minfo = mix.build_music(R, Y, S, log=log)
+    del R, Y
+    gains = minfo["gains"]
     log("[5/6] sound design + ambience")
     sfx_bus, events = mix.build_sfx_bus(log=log)
     amb_bus = mix.build_ambience(log=log)
@@ -70,24 +97,20 @@ def main():
     rng = np.random.default_rng(1234)
     out_mix = os.path.join(OUT, "afterglow_mix.wav")
     write24(out_mix, master, rng)
+    del master
     g = dsp.db2lin(trim)
-    fade = dsp.db_curve([(0, 0), (CUES["fade_out"][1] - 1.0, 0), (CUES["fade_out"][1], -90)])[:, None]
-    buses = {"music": music * g * fade, "sfx": sfx_bus * g * fade, "amb": amb_bus * g * fade}
+    fade = dsp.db_curve([(0, 0), (CUES["fade_out"][1] - 1.0, 0), (CUES["fade_out"][1], -90)])[:, None] * g
+    buses = {"music": music * fade, "sfx": sfx_bus * fade, "amb": amb_bus * fade}
+    del music, sfx_bus, amb_bus
     write24(os.path.join(OUT, "stems", "music_bus.wav"), buses["music"], rng)
     write24(os.path.join(OUT, "stems", "sfx_bus.wav"), buses["sfx"], rng)
     write24(os.path.join(OUT, "stems", "ambience_bus.wav"), buses["amb"], rng)
     # music sub-groups (before memory colour / bus effects; arc gain + trim applied)
     gc = mix.gain_curve(gains)[:, None] * g
-    groups = {
-        "music_piano": ["piano", "piano_bright"],
-        "music_strings_choir": ["strings", "cello", "choir"],
-        "music_beat": ["dr_kick", "dr_snare", "dr_hats", "dr_perc", "dr_brush", "sub", "ep", "pluck", "chip"],
-        "music_textures": ["pad", "shimmer", "musicbox", "celesta", "bells"],
-    }
-    for gname, members in groups.items():
-        write24(os.path.join(OUT, "stems", f"{gname}_dry.wav"), sum(stems[m] for m in members) * gc, rng)
-    write24(os.path.join(OUT, "stems", "music_reverb_returns.wav"),
-            (rets["plate"] + rets["hall"] + rets["room"]) * gc, rng)
+    for gname, x in minfo["groups"].items():
+        write24(os.path.join(OUT, "stems", f"{gname}_dry.wav"), x * gc, rng)
+    write24(os.path.join(OUT, "stems", "music_reverb_returns.wav"), minfo["reverb"] * gc, rng)
+    del minfo["groups"], minfo["reverb"]
 
     # re-read the written master to verify the delivered file itself
     y, sr = sf.read(out_mix, dtype="float64", always_2d=True)
@@ -108,13 +131,16 @@ def main():
                                  dict(path=out_mix, sr=sr, channels=info.channels, notes=notes),
                                  targets=None, events=events)
     log("  report written")
+    stem_table(os.path.join(OUT, "checks", "stem_levels.txt"), minfo["stem_blocks"], gc[:, 0], SECTIONS)
     analysis.spectrogram_png(os.path.join(OUT, "spectrogram.png"), y)
     analysis.envelope_png(os.path.join(OUT, "envelope.png"), y, buses)
     for (a, b, name) in [(0, 10.5, "cold_open"), (40.5, 48.5, "tv_freeze"), (58, 68.5, "dialup_drop"),
                          (82, 92, "earbud"), (99.5, 105, "beat_cut"), (106.5, 115, "reality_bloom"),
                          (153, 163, "tape_stop"), (163, 172, "riser_rec"), (172, 182, "ending")]:
         analysis.zoom_png(os.path.join(OUT, "checks", f"{name}.png"), y, a, b, f"{name}  {a}-{b} s")
-    log(f"done in {time.time() - t_start:.0f} s -> {out_mix}")
+    import resource
+    log(f"done in {time.time() - t_start:.0f} s -> {out_mix}  (peak RSS "
+        f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6:.2f} GB)")
     for r in rows:
         log(f"  {r['label']:22s} {r['a']:6.1f}-{r['b']:6.1f}  ST mean {r['st_mean']:6.1f}  max {r['st_max']:6.1f}")
 

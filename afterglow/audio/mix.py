@@ -145,14 +145,8 @@ def sub_kick_layer(kick_part):
 
 # ------------------------------------------------------------------ stems
 
-def prepare_stems(R, Y, S, log=log_default):
-    """Per-stem EQ/processing, loudness normalisation and level automation."""
-    stems = {}
-    raw = dict(R)
-    raw.update(Y)
-    # kick: add the sub layer
-    raw["dr_kick"] = raw["dr_kick"] / (np.max(np.abs(raw["dr_kick"])) + 1e-12) + 0.30 * sub_kick_layer(S["dr_kick"])
-    EQ = {
+def stem_eq():
+    return {
         "piano": dsp.eq(dsp.butter("high", 32, 2), dsp.rbj("peak", 260, 1.0, -1.5), dsp.rbj("peak", 2600, 0.9, 1.5),
                         dsp.rbj("highshelf", 7000, 0.7, -2.0)),
         "piano_bright": dsp.eq(dsp.butter("high", 120, 2), dsp.rbj("highshelf", 5000, 0.7, 1.0)),
@@ -175,22 +169,36 @@ def prepare_stems(R, Y, S, log=log_default):
         "pluck": dsp.eq(dsp.butter("high", 220, 2), dsp.butter("low", 12000, 2)),
         "chip": dsp.eq(dsp.butter("high", 170, 2), dsp.butter("low", 7500, 2), dsp.rbj("peak", 2000, 1.0, 2.0)),
     }
+
+
+def prepare_stems(R, Y, S, log=log_default):
+    """Per-stem EQ/processing, loudness normalisation and level automation.
+
+    Consumes (pops) the raw arrays from R and Y to keep memory low; returns float32 stems."""
+    stems = {}
+    EQ = stem_eq()
+    kick_key = np.asarray(R["dr_kick"], dtype=np.float64)
+    kick_key = kick_key / (np.max(np.abs(kick_key)) + 1e-12)
     for name, (lvl, _, _, _) in STEMS.items():
-        x = raw[name]
+        x = R.pop(name) if name in R else Y.pop(name)
+        x = np.asarray(x, dtype=np.float64)
+        if name == "dr_kick":
+            x = x / (np.max(np.abs(x)) + 1e-12) + 0.30 * sub_kick_layer(S["dr_kick"])
         x = dsp.filt(x, EQ[name]) if name in EQ else x
         if name == "ep":
             x = dsp.tape_sat(x / (np.max(np.abs(x)) + 1e-12) * 0.5, 4.0) * 2.0
-            x = sidechain_duck(x, raw["dr_kick"], depth_db=2.5)
+            x = sidechain_duck(x, kick_key, depth_db=2.5)
         if name == "sub":
-            x = sidechain_duck(x, raw["dr_kick"], depth_db=3.0, release=0.12)
+            x = sidechain_duck(x, kick_key, depth_db=3.0, release=0.12)
         if name == "dr_snare":
             x = dsp.tape_sat(x / (np.max(np.abs(x)) + 1e-12) * 0.8, 6.0)
         l0 = active_lufs(x)
         g = STEM_REF - l0 + lvl
-        x = x * dsp.db2lin(g)
+        x *= dsp.db2lin(g)
         if name in AUTO:
-            x = x * dsp.db_curve(AUTO[name])[:, None]
-        stems[name] = x
+            x *= dsp.db_curve(AUTO[name])[:, None]
+        stems[name] = x.astype(np.float32)
+        del x
     return stems
 
 
@@ -211,22 +219,23 @@ def irs():
 
 
 def reverb_returns(stems, log=log_default):
-    sends = {"plate": dsp.zeros(), "hall": dsp.zeros(), "room": dsp.zeros()}
-    for name, (lvl, sp, sh, sr_) in STEMS.items():
-        x = stems[name]
-        for bus, db in (("plate", sp), ("hall", sh), ("room", sr_)):
+    """Sum of the three reverb returns (float64, full length)."""
+    wet = dsp.zeros()
+    for bus in ("plate", "hall", "room"):
+        send = dsp.zeros()
+        for name, (lvl, sp, sh, sr_) in STEMS.items():
+            db = {"plate": sp, "hall": sh, "room": sr_}[bus]
             if db is None:
                 continue
             g = dsp.db2lin(db)
             if name == "piano" and bus == "hall":
-                sends[bus] += x * (g * dsp.db_curve(PIANO_HALL))[:, None]
+                send += stems[name] * (g * dsp.db_curve(PIANO_HALL))[:, None]
             else:
-                sends[bus] += x * g
-    rets = {}
-    for bus, x in sends.items():
-        pre = dsp.filt(x, dsp.eq(dsp.butter("high", 140 if bus != "room" else 180, 2)))
-        rets[bus] = dsp.convolve_reverb(pre, irs()[bus])
-    return rets
+                send += stems[name] * g
+        send = dsp.filt(send, dsp.eq(dsp.butter("high", 140 if bus != "room" else 180, 2)))
+        wet += dsp.convolve_reverb(send, irs()[bus])
+        del send
+    return wet
 
 
 # ------------------------------------------------------------------ bus effects
@@ -236,17 +245,13 @@ def beat_cut(stems, t_cut):
     n = dsp.secs(t_cut)
     f = dsp.secs(0.004)
     for name in ("dr_kick", "dr_snare", "dr_hats", "dr_perc", "sub", "ep", "pluck", "piano_bright", "pad"):
-        x = stems[name]
-        if name == "pad":
-            # only the 2010s pad is cut; later pads start after 108 s anyway
-            pass
-        seg_end = dsp.secs(t_cut + 5.5)
-        w = np.ones(N_SAMPLES)
+        w = np.ones(N_SAMPLES, dtype=np.float32)
         w[n - f:n] = np.linspace(1, 0, f)
-        w[n:seg_end] = 0.0
-        if name in ("dr_kick", "dr_snare", "dr_hats", "dr_perc"):
-            w[n:] = np.where(np.arange(n, N_SAMPLES) < dsp.secs(165.0), 0.0, 1.0)  # REC drums come back
-        stems[name] = x * w[:, None]
+        if name.startswith("dr_"):
+            w[n:dsp.secs(165.0)] = 0.0              # the REC drums come back later
+        else:
+            w[n:dsp.secs(t_cut + 5.5)] = 0.0         # later pads/bright piano start after 108 s
+        stems[name] *= w[:, None]
 
 
 def colour(x, rng, t0=0.0):
@@ -274,13 +279,14 @@ def earbud(x):
     return out
 
 
-def reality_memory(dry, full, rng):
-    """108.0-110.8 reality (dry, dull, mono, wobbly) -> bloom into memory by 111.8."""
+def reality_memory(dry_win, full, rng, n_start):
+    """108.0-110.8 reality (dry, dull, mono, wobbly) -> bloom into memory by 111.8.
+
+    dry_win: the coloured DRY music (no reverb) for the window starting at sample n_start."""
     a, b = CUES["reality"]
     b0, b1 = CUES["bloom"]
-    n0, n1 = dsp.secs(a - 0.5), dsp.secs(b1 + 0.5)
-    seg = dry[n0:n1]
-    m = dsp.mono(seg)
+    t_win = n_start / SR
+    m = dsp.mono(dry_win)
     m = dsp.filt(m, dsp.eq(dsp.butter("low", 1800, 4), dsp.butter("high", 150, 2), dsp.rbj("peak", 900, 1.0, 2.0)))
     nn = len(m)
     tt = np.arange(nn) / SR
@@ -290,80 +296,108 @@ def reality_memory(dry, full, rng):
     drift -= np.linspace(0, drift[-1], nn)
     m = dsp.read_at(m, np.arange(nn) + drift)
     real = dsp.to_stereo(m) * dsp.db2lin(-1.5)
-    w = np.clip(dsp.curve([(a - 0.03, 0.0), (a, 1.0), (b0, 1.0), (b1, 0.0)], nn, a - 0.5), 0, 1)
-    out = full.copy()
-    out[n0:n1] = full[n0:n1] * np.sqrt(1 - w)[:, None] + real * np.sqrt(w)[:, None]
+    w = np.clip(dsp.curve([(a - 0.03, 0.0), (a, 1.0), (b0, 1.0), (b1, 0.0)], nn, t_win), 0, 1)
+    out = full
+    seg = out[n_start:n_start + nn]
+    out[n_start:n_start + nn] = seg * np.sqrt(1 - w)[:, None] + real * np.sqrt(w)[:, None]
     return out
 
 
-def reverse_swell(R, rng):
-    """8.2-9.0: reversed reverb of the m0 chord, sucking into the downbeat at 9.0."""
+def reverse_swell(x, rng):
+    """8.2-9.0: reversed reverb of the m0 chord, sucking into the downbeat at 9.0.
+
+    x: the isolated m0 chord render (full timeline). Returns (signal, start_time)."""
     a, b = CUES["reverse_swell"]
-    x = R["piano_swell"]
     n0 = dsp.secs(b)
     src = x[n0:n0 + dsp.secs(5.0)]
     wet = dsp.convolve_reverb_full(src, irs()["hall"])[:dsp.secs(4.0)]
     wet = dsp.filt(wet, dsp.eq(dsp.butter("high", 120, 2), dsp.butter("low", 7000, 2)))
-    rev = wet[::-1]
+    rev = wet[::-1].copy()
     L = len(rev)
     lead = b - a
     t = np.arange(L) / SR - (L / SR - lead)       # 0 at the start of the audible swell
     env = np.clip(t / lead, 0, 1) ** 2.2
     rev = rev * env[:, None]
     rev = dsp.fade(rev, 0.0, 0.006)
-    out = dsp.zeros()
-    dsp.place(out, rev, b - L / SR)
-    return out
+    return rev, b - L / SR
 
 
 # ------------------------------------------------------------------ music bus
 
+GROUPS = {
+    "music_piano": ["piano", "piano_bright"],
+    "music_strings_choir": ["strings", "cello", "choir"],
+    "music_beat": ["dr_kick", "dr_snare", "dr_hats", "dr_perc", "dr_brush", "sub", "ep", "pluck", "chip"],
+    "music_textures": ["pad", "shimmer", "musicbox", "celesta", "bells"],
+}
+
+
+def block_power(x, w=0.4):
+    y = dsp.k_weight(x)
+    p = np.square(y).sum(axis=1)
+    n = dsp.secs(w)
+    k = len(p) // n
+    return p[:k * n].reshape(k, n).mean(axis=1)
+
+
 def build_music(R, Y, S, log=log_default):
+    """Returns (music_bus, info) where info holds groups, reverb sum, stem block powers, gains."""
     rng = np.random.default_rng(77)
     log("  stems: EQ / level")
+    swell_src = np.asarray(R.pop("piano_swell"), dtype=np.float64)
     stems = prepare_stems(R, Y, S, log)
     beat_cut(stems, CUES["beat_cut"])
     ts0, ts1 = CUES["tape_stop"]
-    sil = dsp.curve([(0, 1), (ts1 + 0.05, 1), (ts1 + 0.1, 0), (T(51) - 0.5, 0), (T(51) - 0.45, 1)], smooth=True)
+    sil = dsp.curve([(0, 1), (ts1 + 0.05, 1), (ts1 + 0.1, 0), (T(51) - 0.5, 0), (T(51) - 0.45, 1)],
+                    smooth=True).astype(np.float32)
     for k in stems:
-        stems[k] = stems[k] * sil[:, None]
+        stems[k] *= sil[:, None]
+    del sil
     log("  reverbs (plate / hall / room)")
-    rets = reverb_returns(stems, log)
-    dry = sum(stems.values())
-    # vinyl crackle on the music bus in the 2000s (lighter in the 2010s)
-    crk = amb.vinyl_crackle(dsp.secs(38.0), np.random.default_rng(5))
-    crk /= np.sqrt(np.mean(crk ** 2)) + 1e-12
-    crk_bus = dsp.zeros()
-    dsp.place(crk_bus, crk, 65.8)
-    crk_env = dsp.db_curve([(0, -80), (65.8, -80), (66.0, 0), (89.5, 0), (90.5, -8), (101.8, -8), (102.0, -80)])
-    crk_bus *= crk_env[:, None] * dsp.db2lin(AMB["crackle"])
-    swell = reverse_swell(R, rng)
-    # level the swell against the first piano chord it leads into
-    ref = np.max(np.abs(stems["piano"][dsp.secs(9.0):dsp.secs(10.5)]))
+    wet = reverb_returns(stems, log)
+    info = {"stem_blocks": {k: block_power(v) for k, v in stems.items()},
+            "groups": {g: sum(stems[k].astype(np.float64) for k in ks).astype(np.float32) for g, ks in GROUPS.items()},
+            "reverb": wet.astype(np.float32)}
+    ref = float(np.max(np.abs(stems["piano"][dsp.secs(9.0):dsp.secs(10.5)])))
+    full = np.zeros((N_SAMPLES, 2))
+    for k in list(stems.keys()):
+        full += stems.pop(k)
+    w0, w1 = CUES["reality"][0] - 1.5, CUES["bloom"][1] + 1.5
+    n0, n1 = dsp.secs(w0), dsp.secs(w1)
+    dry_win = full[n0:n1].copy()
+    full += wet
+    del wet
+    swell, t_sw = reverse_swell(swell_src, rng)
+    del swell_src
     swell *= 0.9 * ref / (np.max(np.abs(swell)) + 1e-12)
-    wet = rets["plate"] + rets["hall"] + rets["room"]
-    full = dry + wet + swell
+    dsp.place(full, swell, t_sw)
     full = mono_bass(full)
     log("  memory colour (tape saturation, roll-off, wow & flutter)")
     full = colour(full, np.random.default_rng(1))
-    w0, w1 = CUES["reality"][0] - 1.5, CUES["bloom"][1] + 1.5
-    dry_c = dsp.zeros()
-    dry_c[dsp.secs(w0):dsp.secs(w1)] = colour(dry[dsp.secs(w0):dsp.secs(w1)], np.random.default_rng(1), t0=w0)
+    dry_c = colour(dry_win, np.random.default_rng(1), t0=w0)
+    del dry_win
     # section level fit (dynamics arc)
     gains = fit_arc(full, log)
     gcurve = gain_curve(gains)
-    full = full * gcurve[:, None]
-    dry_c = dry_c * gcurve[:, None]
-    full = full + crk_bus
+    full *= gcurve[:, None]
+    dry_c *= gcurve[n0:n1, None]
+    info["gains"] = gains
+    # vinyl crackle on the music bus in the 2000s (lighter in the 2010s)
+    crk = amb.vinyl_crackle(dsp.secs(36.4), np.random.default_rng(5))
+    crk /= np.sqrt(np.mean(crk ** 2)) + 1e-12
+    cenv = dsp.db_curve([(0.0, -80), (0.2, 0), (23.7, 0), (24.7, -8), (36.0, -8), (36.2, -80)], len(crk))
+    dsp.place(full, crk * (cenv * dsp.db2lin(AMB["crackle"]))[:, None], 65.8)
+    del crk, cenv
     log("  bus effects: earbud, reality->memory, tape stop")
     full = earbud(full)
-    full = reality_memory(dry_c, full, np.random.default_rng(3))
+    full = reality_memory(dry_c, full, np.random.default_rng(3), n0)
+    del dry_c
     a, b = CUES["tape_stop"]
     full = dsp.tape_stop(full, a, b - a, resume_at=T(51) - 0.3)
     # the music fades a little ahead of the master so the film ends on tape hiss
     fo0, fo1 = CUES["fade_out"]
     full *= dsp.db_curve([(0, 0), (fo0 - 0.4, 0), (fo1 - 0.6, -80)])[:, None]
-    return full, stems, rets, gains
+    return full, info
 
 
 def fit_arc(x, log=log_default):
