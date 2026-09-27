@@ -812,12 +812,15 @@ def compose():
     changes = []
     for (a, b, s) in chord_spans(51, 52):
         nsteps = int(round((b - a) / B(0.5)))
-        k = (a - T(51)) / 3.0
-        arp(pno, a, ARP[s], nsteps, B(0.5), vb=38 + 6 * k, vlo=27 + 6 * k, vhi=35 + 7 * k)
+        for i in range(nsteps):                       # a gentle, rising return
+            u = (a - T(51) + i * B(0.5)) / 6.0
+            v = ARP[s][(0, 1, 2, 3, 4, 3, 2, 1)[i % 8]]
+            vel = (30 + 18 * u) + (5 if i == 0 else 0)
+            pno.n(a + i * B(0.5), B(0.5) * 2.2, v, vel)
         changes.append(a)
     today = [
-        (51, [(1, 2, "D5", 45), (3, 1, "E5", 48), (4, 1, "F#5", 52)]),
-        (52, [(1, 2, "G5", 56), (3, 1, "A5", 60)]),
+        (51, [(1, 2, "D5", 38), (3, 1, "E5", 42), (4, 1, "F#5", 47)]),
+        (52, [(1, 2, "G5", 53), (3, 1, "A5", 58)]),
     ]
     for m, items in today:
         mel(pno, m, items)

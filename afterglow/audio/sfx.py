@@ -116,7 +116,7 @@ def pencil_rewind(dur, rng):
     fr1 = band_noise(dur, 700, 2600, rng) * speed * 0.10
     fr2 = band_noise(dur, 250, 700, rng) * speed * 0.06
     tape = band_noise(dur, 3000, 9000, rng) * (speed ** 1.5) * 0.035
-    wh = np.sin(2 * np.pi * np.cumsum(90 + 140 * speed) / SR) * speed * 0.02  # spinning reel tone
+    wh = np.sin(2 * np.pi * np.cumsum(90 + 140 * speed) / SR) * speed * 0.004  # faint spinning reel tone
     out[:n] += fr1 + fr2 + tape + wh
     out = dsp.fade(out, 0.05, 0.08)
     return st(norm(out), -0.05, 0.3)
@@ -155,14 +155,14 @@ def key_clunk(rng, heavy=1.0):
     return norm(out)
 
 
-def play_clunk(rng, motor_dur=3.2):
+def play_clunk(rng, motor_dur=2.2):
     clunk = key_clunk(rng, 1.0)
     n = dsp.secs(motor_dur)
     lv = np.ones(n)
     lv[:dsp.secs(0.05)] = 0
-    fo = dsp.secs(1.8)
+    fo = dsp.secs(1.3)
     lv[-fo:] *= np.linspace(1, 0, fo) ** 2
-    m = motor(motor_dur, rng, level_curve=lv) * 0.06
+    m = motor(motor_dur, rng, level_curve=lv) * 0.03
     out = np.zeros(max(len(clunk), n) + 10)
     dsp.place(out, clunk, 0.0)
     dsp.place(out, m, 0.05)
@@ -601,11 +601,11 @@ def rec_clunk(rng, motor_dur=3.0):
 
 # level of each cue in dBFS peak (before the SFX bus reverb); edit to taste
 SFX_LEVEL = {
-    "case_open": -17, "cassette_desk": -16, "pencil_rewind": -19, "cassette_in": -16, "play_clunk": -13,
-    "ball_stop": -21, "streetlight": -25, "crt_on": -17, "jump": -26, "coin": -27, "freeze_buzz": -34,
-    "modem": -20, "reverse_riser": -24, "chime": -24, "buzz": -9, "msg_pop": -25, "t9": -26,
-    "vibe": -20, "shutter": -20, "like_pop": -24, "whoosh": -25, "clock": -31, "projector": -26,
-    "wind_down": -30, "key_popup": -15, "riser": -25, "rec_clunk": -10, "shimmer_swell": -30,
+    "case_open": -15, "cassette_desk": -14, "pencil_rewind": -17, "cassette_in": -14, "play_clunk": -12,
+    "ball_stop": -19, "streetlight": -22, "crt_on": -16, "jump": -22, "coin": -23, "freeze_buzz": -32,
+    "modem": -22, "reverse_riser": -22, "chime": -19, "buzz": -9, "msg_pop": -21, "t9": -22,
+    "vibe": -19, "shutter": -19, "like_pop": -21, "whoosh": -20, "clock": -25, "projector": -26,
+    "wind_down": -30, "key_popup": -15, "riser": -18, "rec_clunk": -10, "shimmer_swell": -26,
 }
 
 

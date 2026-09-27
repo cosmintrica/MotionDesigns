@@ -116,7 +116,7 @@ def main():
     y, sr = sf.read(out_mix, dtype="float64", always_2d=True)
     info = sf.info(out_mix)
     notes = [
-        f"master trim applied after glue compression: {trim:+.2f} dB",
+        f"master trim (applied before glue compression + limiter): {trim:+.2f} dB",
         "stems/music_bus.wav + sfx_bus.wav + ambience_bus.wav = master input (pre glue-comp/limiter,",
         "  master trim + final fade applied). music_*_dry.wav are pre-bus groups (no memory colour,",
         "  no earbud/reality/tape-stop) for reference; music_reverb_returns.wav = their reverb.",

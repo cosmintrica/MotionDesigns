@@ -55,12 +55,12 @@ STEMS = {
     "cello":        (-5.0,  None,  -7.0,  None),
     "choir":        (-11.0, None,  -3.0,  None),
     "ep":           (-4.0,  -11.0, -16.0, None),
-    "dr_kick":      (-5.0,  None,  None,  -18.0),
+    "dr_kick":      (-6.0,  None,  None,  -18.0),
     "dr_snare":     (-7.0,  -16.0, None,  -12.0),
     "dr_hats":      (-11.5, None,  None,  -16.0),
     "dr_perc":      (-15.0, -18.0, None,  -14.0),
     "dr_brush":     (-15.0, -12.0, -12.0, None),
-    "sub":          (-13.5, None,  None,  None),
+    "sub":          (-20.5, None,  None,  None),
     "pad":          (-11.0, None,  -6.0,  None),
     "shimmer":      (-17.0, None,  0.0,   None),
     "pluck":        (-6.5,  -9.0,  -14.0, None),
@@ -69,18 +69,18 @@ STEMS = {
 
 # per-stem level automation (dB offsets) as (time, dB) breakpoints
 AUTO = {
-    "piano": [(0, 0), (66, 0), (66.2, -1.5), (101.9, -1.5), (102.1, 0.5), (137, 0.5), (138, 1.5),
-              (146, 1.0), (147, 0), (168, 1.0)],
+    "piano": [(0, 0), (41.8, 0), (42.1, -2.0), (46.3, -2.0), (46.6, 0), (66, 0), (66.2, -1.5), (101.9, -1.5),
+              (102.1, 0.5), (137, 0.5), (138, 1.5), (146, 1.0), (147, 0), (168, 1.0)],
     "pad": [(0, 0), (60, 0), (60.5, 2.0), (65.5, 2.0), (66, 0)],
     "piano_bright": [(0, -4.0), (20.5, -4.0), (21.5, 0.0), (89.5, 0.0), (90.5, 3.0), (101.9, 3.0),
-                     (102.1, -4.0), (107.9, -4.0), (108.1, -8.0), (110.8, -8.0), (111.8, 0.0), (146.5, 0.0),
+                     (102.1, -2.0), (107.9, -2.0), (108.1, -8.0), (110.8, -8.0), (111.8, 0.0), (146.5, 0.0),
                      (147.5, -3.0), (156, -3.0), (161.5, 0.0), (167.5, 1.0), (168.3, 3.0)],
     "strings": [(0, 0), (137.5, 0), (138.3, 3.0), (145.5, 3.0), (147.0, 0)],
     "cello": [(0, 0), (137.5, 0), (138.3, 2.0), (145.5, 2.0), (147.0, 0)],
     "choir": [(0, 2.0)],
     "dr_kick": [(0, 0), (164, 0), (165, 5.0)],
-    "dr_brush": [(0, 0), (164, 0), (165, 5.0)],
-    "dr_perc": [(0, 0), (164, 0), (165, 3.0)],
+    "dr_brush": [(0, 6.0), (60, 6.0), (61, 0), (164, 0), (165, 5.0)],
+    "dr_perc": [(0, 3.0), (60, 3.0), (61, 0), (164, 0), (165, 3.0)],
 }
 # piano hall-send automation (dB offsets on the send)
 PIANO_HALL = [(0, 3.0), (20.5, 3.0), (21.5, 0.0), (59.5, 0.0), (60.5, 2.0), (65.8, 2.0), (66.2, -9.0),
@@ -97,8 +97,8 @@ ROLLOFF = [(0, 12000), (21, 12500), (60, 12500), (66, 13000), (89.5, 13000), (90
 
 SFX_REVERB_SEND = -14.0   # dB into the room reverb for the SFX bus
 AMB = {  # ambience levels (dBFS RMS)
-    "hiss_open": -47.0, "hiss_bed": -60.0, "hiss_end": -50.0,
-    "swallows": -39.0, "crickets": -35.0, "rain": -33.0, "crackle": -41.0,
+    "hiss_open": -46.0, "hiss_bed": -60.0, "hiss_end": -50.0,
+    "swallows": -39.0, "crickets": -37.0, "rain": -33.0, "crackle": -41.0,
 }
 
 
@@ -176,7 +176,7 @@ def stem_eq():
         "dr_hats": dsp.eq(dsp.butter("high", 4000, 2), dsp.butter("low", 10500, 2)),
         "dr_perc": dsp.eq(dsp.butter("high", 1500, 2), dsp.butter("low", 11000, 2)),
         "dr_brush": dsp.eq(dsp.butter("high", 400, 2), dsp.butter("low", 9000, 2)),
-        "sub": dsp.eq(dsp.butter("high", 28, 2), dsp.butter("low", 220, 2)),
+        "sub": dsp.eq(dsp.butter("high", 34, 2), dsp.butter("low", 220, 2)),
         "pad": dsp.eq(dsp.butter("high", 90, 2), dsp.butter("low", 7000, 2)),
         "shimmer": dsp.eq(dsp.butter("high", 900, 2), dsp.butter("low", 12000, 2)),
         "pluck": dsp.eq(dsp.butter("high", 220, 2), dsp.butter("low", 12000, 2)),
@@ -196,7 +196,7 @@ def prepare_stems(R, Y, S, log=log_default):
         x = R.pop(name) if name in R else Y.pop(name)
         x = np.asarray(x, dtype=np.float64)
         if name == "dr_kick":
-            x = x / (np.max(np.abs(x)) + 1e-12) + 0.20 * sub_kick_layer(S["dr_kick"])
+            x = x / (np.max(np.abs(x)) + 1e-12) + 0.12 * sub_kick_layer(S["dr_kick"])
         x = dsp.filt(x, EQ[name]) if name in EQ else x
         if name == "ep":
             x = dsp.tape_sat(x / (np.max(np.abs(x)) + 1e-12) * 0.6, 9.0)
@@ -471,7 +471,8 @@ def build_ambience(log=log_default):
     hiss_env = dsp.db_curve([
         (0.0, opn), (ho[1] - 0.4, opn), (ho[1] + 1.2, bed), (60.0, bed), (61.0, -80), (156.3, -80),
         (he[0] - 0.05, -80), (he[0] + 0.05, end), (he[1] - 1.0, end), (he[1] + 1.0, bed - 2),
-        (168.0, bed - 2), (168.3, bed + 3), (fo[0], bed + 3), (fo[1], -90)], smooth=True)
+        (168.0, bed - 2), (168.3, bed + 3), (fo[0], bed + 3), (fo[0] + 0.9, bed + 4), (fo[1] - 0.05, -75),
+        (fo[1], -90)], smooth=True)
     hiss_env[:dsp.secs(0.05)] *= np.linspace(0, 1, dsp.secs(0.05))
     bus += hiss * hiss_env[:, None]
     a, b = CUES["swallows"]

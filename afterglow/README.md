@@ -2,6 +2,8 @@
 
 *A letter to the ’90s, the 2000s and the 2010s.*
 
+![AFTERGLOW — Summers lasted forever.](poster.jpg)
+
 A 3-minute motion-design short about nostalgia: why we miss those years, why our
 memories seem to glow, and what we actually miss. 1920×1080, 24 fps, stereo.
 
@@ -48,7 +50,7 @@ and `fluid-soundfont-gm` packages.
 cd afterglow
 python3 audio/build.py                                # -> out/audio/afterglow_mix.wav
 node render/render.mjs --video --workers 2            # -> out/segments/*.mkv
-render/encode.sh                                      # -> AFTERGLOW_1080p.mp4 (+ out/AFTERGLOW_master.mp4)
+render/encode.sh                                      # -> AFTERGLOW_1080p.mp4 (+ out/AFTERGLOW_1080p_HQ.mp4)
 
 # preview single frames while editing (seconds):
 node render/render.mjs --stills 24,71.2,140 --tag look
